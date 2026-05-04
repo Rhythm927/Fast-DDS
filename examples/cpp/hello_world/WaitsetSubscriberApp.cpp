@@ -110,6 +110,7 @@ WaitsetSubscriberApp::~WaitsetSubscriberApp()
     }
 }
 
+/// @brief WaitSet 更像“事件等待 + 主线程统一处理”
 void WaitsetSubscriberApp::run()
 {
     while (!is_stopped())

@@ -56,6 +56,7 @@ class DomainParticipantImpl;
  * Class DomainParticipantFactory
  *
  *  @ingroup FASTDDS_MODULE
+ *  @brief 工厂类为单例模式，构造和析构为私有，拷贝构造和赋值运算符被delete掉
  */
 class DomainParticipantFactory
 {
@@ -442,7 +443,7 @@ protected:
     DomainParticipantFactory();
 
     virtual ~DomainParticipantFactory();
-
+    
     DomainParticipantFactory (
             const DomainParticipantFactory&) = delete;
 

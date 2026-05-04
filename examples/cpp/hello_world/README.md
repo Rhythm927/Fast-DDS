@@ -18,7 +18,7 @@ In both cases, the three DDS entities (domain participant, publisher/subscriber 
 If the environment does not specify the expected configuration, they take the default configuration per entity.
 For further information regarding the configuration environment, please refer to the *[XML profile playground](#xml-profile-playground)* section.
 
-This particular example includes two different subscription paradigms; i.e. listening callbacks and wait-sets:
+This particular example includes two different subscription paradigms; i.e. **listening callbacks and wait-sets:**
 
 * The listening callback mechanism consists on declaring a listener class and attaching it to the data reader.
   When the data reader is triggered by an event, it runs the listener's method associated to that event, as a callback.

@@ -123,6 +123,7 @@ void ListenerSubscriberApp::on_subscription_matched(
     }
 }
 
+/// @brief 数据到了以后，回调 on_data_available() 自动被触发
 void ListenerSubscriberApp::on_data_available(
         DataReader* reader)
 {

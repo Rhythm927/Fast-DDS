@@ -45,7 +45,9 @@ public:
     //! Publisher configuration structure (shared for both publisher and subscriber applications)
     struct publisher_config
     {
+        // 表示要发送多少个 sample 0 在这个例子里表示不限数量，一直发
         uint16_t samples = 0;
+        // 表示 publisher 在开始发送前，至少要等到多少个匹配到的 subscriber 默认是 1，也就是至少有一个 subscriber 连上后再开始发
         uint16_t matched = 1;
     };
 

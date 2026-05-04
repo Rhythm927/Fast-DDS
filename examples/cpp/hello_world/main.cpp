@@ -85,7 +85,7 @@ int main(
             std::cout << app_name << " running for " << samples << " samples. Please press Ctrl+C to stop the "
                       << app_name << " at any time." << std::endl;
         }
-
+        ///@brief 收到系统信号后的处理回调，用来让程序比较优雅地退出。
         stop_app_handler = [&](int signum)
                 {
                     std::cout << "\n" << CLIParser::parse_signal(signum) << " received, stopping " << app_name

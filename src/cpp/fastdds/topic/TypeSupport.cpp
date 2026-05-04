@@ -37,6 +37,7 @@ ReturnCode_t TypeSupport::register_type(
     return participant->register_type(*this, type_name.empty() ? get_type_name() : type_name);
 }
 
+// TypeSupport::register_type调用了DomainParticipantImpl::register_type
 ReturnCode_t TypeSupport::register_type(
         DomainParticipant* participant) const
 {

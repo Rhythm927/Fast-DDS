@@ -37,7 +37,7 @@
 #include <fastdds/dds/subscriber/DataReader.hpp>
 #include <fastdds/dds/subscriber/Subscriber.hpp>
 #include <fastdds/dds/topic/IContentFilterFactory.hpp>
-#include <fastdds/dds/topic/TypeSupport.hpp>
+fastdds/rpc#include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastdds/dds/xtypes/dynamic_types/DynamicPubSubType.hpp>
 #include <fastdds/dds/xtypes/dynamic_types/DynamicType.hpp>
 #include <fastdds/rtps/attributes/PropertyPolicy.hpp>
@@ -157,8 +157,13 @@ DomainParticipantImpl::DomainParticipantImpl(
 #pragma warning (disable : 4355 )
     , rtps_listener_(this)
 {
+    // 建立接口和impl的联系
     participant_->impl_ = this;
 
+    // 初始化default_pub_qos_
+    // load_profiles() 负责提前把 XML 默认配置加载进 XMLProfileManager 到了这个构造函数里，
+    // 再从 XMLProfileManager 取出默认配置，填给当前 participant 的默认 pub/sub/topic qos
+    // 将pub_attr 的值赋值给default_pub_qos_，完成对DomainParticipantImpl的属性default_pub_qos_的配置
     xmlparser::PublisherAttributes pub_attr;
     XMLProfileManager::getDefaultPublisherAttributes(pub_attr);
     utils::set_qos_from_attributes(default_pub_qos_, pub_attr);
@@ -177,9 +182,13 @@ DomainParticipantImpl::DomainParticipantImpl(
     {
         EPROSIMA_LOG_ERROR(DOMAIN_PARTICIPANT, "Error generating GUID for participant");
     }
+    ///@brief GUID 是 Globally Unique Identifier，全局唯一标识符。
+    //          GuidPrefix_t：通常标识某个 participant 所在的主机/进程/participant 范围
+    //          EntityId_t：标识这个 participant 下的具体实体
     handle_ = guid_;
 
     /* Fill physical data properties if they are found and empty */
+    // 从系统获取并设置3个值
     std::string* property_value = fastdds::rtps::PropertyPolicyHelper::find_property(
         qos_.properties(), parameter_policy_physical_data_host);
     if (nullptr != property_value && property_value->empty())
@@ -1885,6 +1894,9 @@ const TypeSupport DomainParticipantImpl::find_type(
     return TypeSupport(nullptr);
 }
 
+// type_name 是 key，类型是 std::string   TypeSupport 是 value
+// 先按 type_name 去注册表里查
+// 如果这个名字已经存在，再判断“这个名字对应的旧 TypeSupport”和“现在传进来的新 TypeSupport”是不是同一个类型
 ReturnCode_t DomainParticipantImpl::register_type(
         const TypeSupport type,
         const std::string& type_name)
@@ -1903,21 +1915,23 @@ ReturnCode_t DomainParticipantImpl::register_type(
      * the second registration, as the TypeIdentifiers of the retrieved type from the registry would not be equal
      * to those of the incoming type support.
      */
+    // register_type_object_representation() 会去补全 TypeSupport 内部那个 TopicDataType 的 TypeIdentifiers。
     type.get()->register_type_object_representation();
 
     TypeSupport t = find_type(type_name);
 
     if (!t.empty())
     {
-        if (t == type)
+        if (t == type) // 已经有同名类型，而且就是同一个类型对象
         {
             return RETCODE_OK;
         }
-
+        //  已经有同名类型，但不是同一个类型
+        // type_name 这个名字已经被占用了 但占用它的是另一个不同的类型
         EPROSIMA_LOG_ERROR(PARTICIPANT, "Another type with the same name '" << type_name << "' is already registered.");
         return RETCODE_PRECONDITION_NOT_MET;
     }
-
+    //  当前还没有这个名字的类型
     EPROSIMA_LOG_INFO(PARTICIPANT, "Type " << type_name << " registered.");
     std::lock_guard<std::mutex> lock(mtx_types_);
     types_.insert(std::make_pair(type_name, type));
@@ -2467,8 +2481,11 @@ void DomainParticipantImpl::create_instance_handle(
     using rtps::octet;
 
     uint32_t id = ++next_instance_id_;
-    handle = guid_;
+    handle = guid_; // 前12个字节 guidPrefix
     handle.value[15] = 0x01; // Vendor specific;
+    // id & 0xFF：把 id 的最低 8 位（也就是个位字节）取出来，写到 handle.value[14]。
+    // (id >> 8) & 0xFF：先把 id 向右移动 8 位，把原来的第 9~16 位移到最低位，然后再与 0xFF 截取最低 8 位，写到 handle.value[13]。
+    // (id >> 16) & 0xFF：同理，取出 id 的第 17~24 位，写到 handle.value[12]。
     handle.value[14] = static_cast<octet>(id & 0xFF);
     handle.value[13] = static_cast<octet>((id >> 8) & 0xFF);
     handle.value[12] = static_cast<octet>((id >> 16) & 0xFF);

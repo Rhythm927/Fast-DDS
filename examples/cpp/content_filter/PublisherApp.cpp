@@ -176,6 +176,7 @@ bool PublisherApp::publish()
     if (!is_stopped())
     {
         hello_.index(hello_.index() + 1);
+        // 使用DataWriter发送消息
         ret = (RETCODE_OK == writer_->write(&hello_));
     }
     return ret;

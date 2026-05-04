@@ -196,6 +196,7 @@ void SubscriberApp::on_subscription_matched(
     }
 }
 
+// sub端收到消息，会调用一个回掉函数
 void SubscriberApp::on_data_available(
         DataReader* reader)
 {

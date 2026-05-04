@@ -106,6 +106,9 @@ PublisherApp::~PublisherApp()
     }
 }
 
+/// @brief 一旦 subscriber 匹配上了，就会更新 matched_ 并唤醒条件变量。
+/// @param  
+/// @param info 
 void PublisherApp::on_publication_matched(
         DataWriter* /*writer*/,
         const PublicationMatchedStatus& info)

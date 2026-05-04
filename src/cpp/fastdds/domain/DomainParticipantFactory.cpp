@@ -88,6 +88,8 @@ DomainParticipantFactory* DomainParticipantFactory::get_instance()
 std::shared_ptr<DomainParticipantFactory> DomainParticipantFactory::get_shared_instance()
 {
     // Note we need a custom deleter, since the destructor is protected.
+    ///@note 析构函数非public + 还想要用 shared_ptr管理，需要自定义析构函数
+    // 局部静态变量 shared_ptr 版本的主要收益是“把单例包装成可共享的句柄接口”；如果不需要这种句柄语义，普通局部静态对象通常更简单、更轻。
     static std::shared_ptr<DomainParticipantFactory> instance(
         new DomainParticipantFactory(),
         [](DomainParticipantFactory* p)
@@ -153,6 +155,7 @@ DomainParticipant* DomainParticipantFactory::create_participant(
         DomainParticipantListener* listener,
         const StatusMask& mask)
 {
+    //从配置文件中读取初始化信息，如果没有xml文件，初始化为default信息
     load_profiles();
 
     const DomainParticipantQos& pqos = (&qos == &PARTICIPANT_QOS_DEFAULT) ? default_participant_qos_ : qos;
@@ -164,12 +167,14 @@ DomainParticipant* DomainParticipantFactory::create_participant(
     statistics::dds::DomainParticipantImpl* dom_part_impl =
             new statistics::dds::DomainParticipantImpl(dom_part, did, pqos, listener);
 #endif // FASTDDS_STATISTICS
-
+    // 检查 dom_part_impl 是否拿到了有效 GUID
     if (fastdds::rtps::GUID_t::unknown() != dom_part_impl->guid())
     {
         {
             std::lock_guard<std::mutex> guard(mtx_participants_);
             using VectorIt = std::map<DomainId_t, std::vector<DomainParticipantImpl*>>::iterator;
+            // key 是 did，也就是 domain id  | value 是这个 domain 下所有 DomainParticipantImpl* 的数组
+            // std::map<eprosima::fastdds::rtps::GuidPrefix_t, DiscoveryParticipantInfo> participants_;
             VectorIt vector_it = participants_.find(did);
 
             if (vector_it == participants_.end())
@@ -469,12 +474,16 @@ ReturnCode_t DomainParticipantFactory::get_participant_extended_qos_from_default
 
 ReturnCode_t DomainParticipantFactory::load_profiles()
 {
+    // 懒加载：不是程序启动就加载，而是第一次需要时才加载
+    // 只加载一次：避免重复解析 XML
+    // 尊重用户显式配置：默认值只补空，不强行覆盖
+    // 线程安全：用互斥锁保证初始化过程只有一次
     // NOTE: This could be done with a bool atomic to avoid taking the mutex in most cases, however the use of
     // atomic over mutex is not deterministically better, and this way is easier to read and understand.
 
     // Only load profiles once, if not, wait for profiles to be loaded
     std::lock_guard<std::mutex> _(default_xml_profiles_loaded_mtx_);
-    if (!default_xml_profiles_loaded)
+    if (!default_xml_profiles_loaded) // 如果没有被加载
     {
         SystemInfo::set_environment_file();
         XMLProfileManager::loadDefaultXMLFile();
