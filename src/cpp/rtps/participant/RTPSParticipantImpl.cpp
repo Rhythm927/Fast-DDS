@@ -294,7 +294,7 @@ RTPSParticipantImpl::RTPSParticipantImpl(
     , m_security_manager(this, *this)
 #endif // if HAVE_SECURITY
     , mp_participantListener(plisten)
-    , mp_userParticipant(par)
+    , mp_userParticipant(par) //对应外层 RTPSParticipant 
     , is_intraprocess_only_(should_be_intraprocess_only(PParam))
 #ifdef FASTDDS_STATISTICS
     , monitor_server_(nullptr)
@@ -309,7 +309,7 @@ RTPSParticipantImpl::RTPSParticipantImpl(
         return;
     }
 
-    mp_userParticipant->mp_impl = this;
+    mp_userParticipant->mp_impl = this; //接口和实现的绑定
 
     setup_guids(persistence_guid);
 
@@ -595,7 +595,6 @@ void RTPSParticipantImpl::setup_meta_traffic()
 {
     /* If metatrafficMulticastLocatorList is empty, add mandatory default Locators
        Else -> Take them */
-
     // Creation of metatraffic locator and receiver resources
     uint32_t metatraffic_multicast_port = m_att.port.getMulticastPort(domain_id_);
     metatraffic_unicast_port_ = m_att.port.getUnicastPort(domain_id_, static_cast<uint32_t>(m_att.participantID));
@@ -604,6 +603,7 @@ void RTPSParticipantImpl::setup_meta_traffic()
     /* INSERT DEFAULT MANDATORY MULTICAST LOCATORS HERE */
     if (m_att.builtin.metatrafficMulticastLocatorList.empty() && m_att.builtin.metatrafficUnicastLocatorList.empty())
     {
+        // default 指的是用户，即DDS层的，非RTPS层
         get_default_metatraffic_locators(m_att);
         internal_metatraffic_locators_ = true;
     }
@@ -781,11 +781,13 @@ bool RTPSParticipantImpl::setup_builtin_protocols()
     return true;
 }
 
+// 真正把底层 RTPS Participant 启动起来。
 void RTPSParticipantImpl::enable()
 {
+    // 启动 RTPS 的内建协议，最重要的就是发现相关协议
     mp_builtinProtocols->enable();
 
-    //Start reception
+    //Start reception 注册接收资源
     for (auto& receiver : m_receiverResourcelist)
     {
         receiver.Receiver->RegisterReceiver(receiver.mp_receiver);
@@ -1233,8 +1235,11 @@ bool RTPSParticipantImpl::createWriter(
         const EntityId_t& entityId,
         bool isBuiltin)
 {
+    //先把输出指针清空 这样即使后面失败，调用方也不会拿到野指针
     *WriterOut = nullptr;
 
+    // 说明当前 Writer 想启用 data sharing
+    // 但这里要求：启用 data sharing 时，必须搭配专门的 DataSharing payload pool
     if (param.endpoint.data_sharing_configuration().kind() != dds::DataSharingKind::OFF)
     {
         EPROSIMA_LOG_ERROR(RTPS_PARTICIPANT, "Data sharing needs a DataSharing payload pool");
@@ -1995,8 +2000,10 @@ bool RTPSParticipantImpl::createReceiverResources(
     uint32_t max_receiver_buffer_size = (std::numeric_limits<uint32_t>::max)();
 #endif // if HAVE_SECURITY
 
+    // 为每个Locator 创建ReceiverResource
     for (auto it_loc = input_list.begin(); it_loc != input_list.end(); ++it_loc)
     {
+        // 如果receiverresource创建失败（主要原因可能是端口号被占用），更改端口号，继续创建，
         Locator_t loc = *it_loc;
         bool ret = m_network_Factory.BuildReceiverResources(loc, newItemsBuffer, max_receiver_buffer_size);
         if (!ret && ApplyMutation)
@@ -2023,7 +2030,7 @@ bool RTPSParticipantImpl::createReceiverResources(
         }
 
         ret_val |= !newItemsBuffer.empty();
-
+        // 为每个receiverResource 创建一个messagereceiver
         for (auto it_buffer = newItemsBuffer.begin(); it_buffer != newItemsBuffer.end(); ++it_buffer)
         {
             std::lock_guard<std::mutex> lock(m_receiverResourcelistMutex);
@@ -2031,8 +2038,9 @@ bool RTPSParticipantImpl::createReceiverResources(
             m_receiverResourcelist.emplace_back(*it_buffer);
             //Create and init the MessageReceiver
             auto mr = new MessageReceiver(this, (*it_buffer)->max_message_size());
+            // 将receiverresource 与 MessageReceiver 关联，关联后可以接收message了
             m_receiverResourcelist.back().mp_receiver = mr;
-            //Start reception
+            // Start reception
             if (RegisterReceiver)
             {
                 m_receiverResourcelist.back().Receiver->RegisterReceiver(mr);
@@ -2890,12 +2898,11 @@ void RTPSParticipantImpl::environment_file_has_changed()
                 << "or an overriden CLIENT (SIMPLE participant transformed into CLIENT with the environment variable)");
     }
 }
-
 void RTPSParticipantImpl::get_default_metatraffic_locators(
         RTPSParticipantAttributes& att)
 {
     uint32_t metatraffic_multicast_port = att.port.getMulticastPort(domain_id_);
-
+    // 多播
     if (m_att.builtin.discovery_config.discoveryProtocol != DiscoveryProtocol::CLIENT &&
             m_att.builtin.discovery_config.discoveryProtocol != DiscoveryProtocol::SUPER_CLIENT)
     {
@@ -2903,7 +2910,7 @@ void RTPSParticipantImpl::get_default_metatraffic_locators(
                 metatraffic_multicast_port);
         m_network_Factory.NormalizeLocators(att.builtin.metatrafficMulticastLocatorList);
     }
-
+    // 单播
     m_network_Factory.getDefaultMetatrafficUnicastLocators(att.builtin.metatrafficUnicastLocatorList,
             metatraffic_unicast_port_);
     m_network_Factory.NormalizeLocators(att.builtin.metatrafficUnicastLocatorList);

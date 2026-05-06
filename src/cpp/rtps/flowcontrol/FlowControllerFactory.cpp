@@ -16,13 +16,14 @@ void FlowControllerFactory::init(
     const ThreadSettings& sender_thread_settings =
             (nullptr == participant_) ? ThreadSettings{}
             : participant_->get_attributes().builtin_controllers_sender_thread;
-
+    // 纯同步的，先进先出（fifo）的发送模式，纯同步就是完全没有异步发送方式
     // PureSyncFlowController -> used by volatile besteffort writers.
     flow_controllers_.insert(decltype(flow_controllers_)::value_type(
                 pure_sync_flow_controller_name,
                 std::unique_ptr<FlowController>(
                     new FlowControllerImpl<FlowControllerPureSyncPublishMode,
                     FlowControllerFifoSchedule>(participant_, nullptr, 0, sender_thread_settings))));
+    // 同步的，先进先出（fifo）的发送模式，如果同步发送不成功，则异步发送         
     // SyncFlowController -> used by rest of besteffort writers.
     flow_controllers_.insert(decltype(flow_controllers_)::value_type(
                 sync_flow_controller_name,
@@ -30,6 +31,7 @@ void FlowControllerFactory::init(
                     new FlowControllerImpl<FlowControllerSyncPublishMode,
                     FlowControllerFifoSchedule>(participant_, nullptr, async_controller_index_++,
                     sender_thread_settings))));
+    // 异步的，先进先出（fifo）的发送模式，异步的就是没有同步发送的方式，都是异步发送
     // AsyncFlowController
     flow_controllers_.insert(decltype(flow_controllers_)::value_type(
                 async_flow_controller_name,
@@ -59,7 +61,7 @@ void FlowControllerFactory::register_flow_controller (
     }
 
     const ThreadSettings& sender_thread_settings = flow_controller_descr.sender_thread;
-
+    // 如果设置流量控制
     if (0 < flow_controller_descr.max_bytes_per_period)
     {
         switch (flow_controller_descr.scheduler)
@@ -100,6 +102,7 @@ void FlowControllerFactory::register_flow_controller (
                 assert(false);
         }
     }
+    // 没有设置流量控制
     else
     {
         switch (flow_controller_descr.scheduler)

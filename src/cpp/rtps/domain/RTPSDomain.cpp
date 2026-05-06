@@ -111,6 +111,7 @@ void RTPSDomain::stopAll()
     RTPSDomainImpl::get_instance()->stop_all();
 }
 
+// 最重要的入口
 RTPSParticipant* RTPSDomain::createParticipant(
         uint32_t domain_id,
         const RTPSParticipantAttributes& attrs,
@@ -209,6 +210,7 @@ void RTPSDomainImpl::stop_all()
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
+// 真正创建底层 participant 的核心实现。
 RTPSParticipant* RTPSDomainImpl::create_participant(
         uint32_t domain_id,
         bool enabled,

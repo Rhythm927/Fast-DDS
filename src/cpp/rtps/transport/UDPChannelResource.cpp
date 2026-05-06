@@ -28,6 +28,7 @@ namespace rtps {
 
 using Log = fastdds::dds::Log;
 
+// 创建了一个线程，不断接收数据
 UDPChannelResource::UDPChannelResource(
         UDPTransportInterface* transport,
         eProsimaUDPSocket& socket,

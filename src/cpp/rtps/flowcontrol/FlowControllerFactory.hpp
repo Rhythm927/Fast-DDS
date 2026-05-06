@@ -24,7 +24,7 @@ const char* const async_statistics_flow_controller_name = "AsyncStatisticsFlowCo
 
 /*!
  * Factory of flow controllers.
- *
+ *      每一个writer都有一个配套的flow_controller，flow_controller控制了writer 发送消息的策略和行为。
  * @note Non-safe thread
  */
 class FlowControllerFactory

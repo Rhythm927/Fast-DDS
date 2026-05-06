@@ -37,7 +37,7 @@
 #include <fastdds/dds/subscriber/DataReader.hpp>
 #include <fastdds/dds/subscriber/Subscriber.hpp>
 #include <fastdds/dds/topic/IContentFilterFactory.hpp>
-fastdds/rpc#include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastdds/dds/xtypes/dynamic_types/DynamicPubSubType.hpp>
 #include <fastdds/dds/xtypes/dynamic_types/DynamicType.hpp>
 #include <fastdds/rtps/attributes/PropertyPolicy.hpp>
@@ -334,6 +334,7 @@ ReturnCode_t DomainParticipantImpl::enable()
     utils::set_attributes_from_qos(rtps_attr, qos_);
     rtps_attr.participantID = participant_id_;
 
+    // DDS 层开始创建底层 RTPSParticipant 的正式入口
     RTPSParticipant* part = RTPSDomain::createParticipant(
         domain_id_,
         false,

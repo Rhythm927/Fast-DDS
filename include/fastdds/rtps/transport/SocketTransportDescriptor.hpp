@@ -100,6 +100,7 @@ struct SocketTransportDescriptor : public PortBasedTransportDescriptor
     //! Allowed interfaces in an IP or device name string format.
     std::vector<std::string> interfaceWhiteList;
     //! Transport's netmask filter configuration.
+    // 控制这个 transport 在多网卡、多子网场景下，哪些网络接口/locator 可以被接受和使用。
     NetmaskFilterKind netmask_filter;
     //! Allowed interfaces in an IP or device name string format, each with a specific netmask filter configuration.
     std::vector<AllowedNetworkInterface> interface_allowlist;

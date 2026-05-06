@@ -211,10 +211,14 @@ bool UDPTransportInterface::OpenAndBindInputSockets(
 
     try
     {
+        // interface_whitelist_ 为空，把地址0 放入interface_whitelist_ 
+        // 获取本地 ip 地址
         std::vector<std::string> vInterfaces = get_binding_interfaces_list();
+        // 本机的ip地址，根据本机的ip地址，创建ChannelResource，ChannelResource的interface 是ip地址
         for (std::string sInterface : vInterfaces)
         {
             UDPChannelResource* p_channel_resource;
+            // 主要用到的是 locator 的port 和 interface_whitelist_的ip
             p_channel_resource = CreateInputChannelResource(sInterface, locator, is_multicast, maxMsgSize, receiver);
             mInputSockets[IPLocator::getPhysicalPort(locator)].push_back(p_channel_resource);
         }
@@ -238,8 +242,10 @@ UDPChannelResource* UDPTransportInterface::CreateInputChannelResource(
         uint32_t maxMsgSize,
         TransportReceiverInterface* receiver)
 {
+    // 生成一个 socket
     eProsimaUDPSocket unicastSocket = OpenAndBindInputSocket(sInterface,
                     IPLocator::getPhysicalPort(locator), is_multicast);
+    // 每个 channelresource 有个线程，不断接收消息
     UDPChannelResource* p_channel_resource = new UDPChannelResource(this, unicastSocket, maxMsgSize, locator,
                     sInterface, receiver, configuration()->get_thread_config_for_port(locator.port));
     return p_channel_resource;

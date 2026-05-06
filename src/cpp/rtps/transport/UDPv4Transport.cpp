@@ -40,6 +40,7 @@ namespace rtps {
 
 using Log = fastdds::dds::Log;
 
+// 从本机获取所有网络接口地址，然后只保留 IPv4 相关的接口信息。
 static bool get_ipv4s(
         std::vector<IPFinder::info_IP>& locNames,
         bool return_loopback,
@@ -49,7 +50,8 @@ static bool get_ipv4s(
     {
         return false;
     }
-
+    // 它不会真的缩短容器，只是把“不需要的元素”搬到末尾，并返回新的逻辑结尾迭代器 new_end
+    // 保留 ipv4地址 和 本地地址
     auto new_end = remove_if(locNames.begin(),
                     locNames.end(),
                     [](IPFinder::info_IP ip)
@@ -57,6 +59,7 @@ static bool get_ipv4s(
                         return ip.type != IPFinder::IP4 && ip.type != IPFinder::IP4_LOCAL;
                     });
     locNames.erase(new_end, locNames.end());
+
     std::for_each(locNames.begin(), locNames.end(), [](IPFinder::info_IP& loc)
             {
                 loc.locator.kind = LOCATOR_KIND_UDPv4;
@@ -107,6 +110,7 @@ static asio::ip::address_v4::bytes_type locator_to_native(
     }
 }
 
+
 UDPv4Transport::UDPv4Transport(
         const UDPv4TransportDescriptor& descriptor)
     : UDPTransportInterface(LOCATOR_KIND_UDPv4)
@@ -118,7 +122,7 @@ UDPv4Transport::UDPv4Transport(
     // Copy descriptor's netmask filter configuration
     // NOTE: participant's netmask_filter already taken into account before calling tranport registration
     netmask_filter_ = descriptor.netmask_filter;
-
+    // 白名单/允许名单/阻止名单
     if (!descriptor.interfaceWhiteList.empty() || !descriptor.interface_allowlist.empty() ||
             !descriptor.interface_blocklist.empty())
     {
@@ -139,7 +143,11 @@ UDPv4Transport::UDPv4Transport(
         }
 
         std::vector<IPFinder::info_IP> local_interfaces;
+        // 获取本机网卡的ipv4地址，true 返回回环地址
+        // ipv4的回环地址 是 127.0.0.1 ipv6的回环地址是 0:0:0:1
+        // 本机地址 有好几个：wifi地址，4g地址，wifi p2p地址等
         get_ipv4s(local_interfaces, true, false);
+        // 如果infoIp在blocklist的前提下，还在whilelist 或者 allowlist，那么就报错
         for (const IPFinder::info_IP& infoIP : local_interfaces)
         {
             if (std::find_if(block_begin, block_end, [infoIP](const BlockedNetworkInterface& blocklist_element)
@@ -183,6 +191,7 @@ UDPv4Transport::UDPv4Transport(
                 if (allow_it != allow_end)
                 {
                     NetmaskFilterKind netmask_filter = allow_it->netmask_filter;
+                    // 检查netmask过滤策略能不能和transport总体配置兼容，兼容才把这个网卡正式加入可用接口列表
                     if (network::netmask_filter::validate_and_transform(netmask_filter,
                             descriptor.netmask_filter))
                     {
@@ -257,6 +266,7 @@ bool UDPv4Transport::getDefaultMetatrafficMulticastLocators(
     locator.kind = LOCATOR_KIND_UDPv4;
     locator.port = static_cast<uint16_t>(metatraffic_multicast_port);
     IPLocator::setIPv4(locator, DEFAULT_METATRAFFIC_MULTICAST_ADDRESS);
+    // 设置 "239.255.0.1"
     locators.push_back(locator);
     return true;
 }
@@ -268,6 +278,7 @@ bool UDPv4Transport::getDefaultMetatrafficUnicastLocators(
     Locator locator;
     locator.kind = LOCATOR_KIND_UDPv4;
     locator.port = static_cast<uint16_t>(metatraffic_unicast_port);
+    //设置为0.0.0.0
     locator.set_Invalid_Address();
     locators.push_back(locator);
 
@@ -386,6 +397,7 @@ const std::string& UDPv4Transport::localhost_name()
     return ip4_localhost;
 }
 
+// 创建一个socket
 eProsimaUDPSocket UDPv4Transport::OpenAndBindInputSocket(
         const std::string& sIp,
         uint16_t port,
@@ -431,6 +443,8 @@ eProsimaUDPSocket UDPv4Transport::OpenAndBindInputSocket(
     return socket;
 }
 
+// 单播：确保“这个端口有接收 socket”
+// 组播：除了确保 socket 存在，还要让它真正加入对应的 multicast group
 bool UDPv4Transport::OpenInputChannel(
         const Locator& locator,
         TransportReceiverInterface* receiver,
@@ -443,18 +457,23 @@ bool UDPv4Transport::OpenInputChannel(
     }
 
     bool success = false;
-
+    // 如果这个输入通道还没开，就先创建并绑定 socket
     if (!IsInputChannelOpen(locator))
     {
+        // 根据 locator 的port 和 interface_whitelist_ 中的ip 创建channelResource
         success = OpenAndBindInputSockets(locator, receiver, IPLocator::isMulticast(locator), maxMsgSize);
     }
 
+    // 针对多播的情况一般需要 需要新建一个 channelResource
+    // IsInputChannelOpen 主要是看port 有没有对应的 channelResource
     if (IPLocator::isMulticast(locator) && IsInputChannelOpen(locator))
     {
+        // ip地址
         std::string locatorAddressStr = IPLocator::toIPv4string(locator);
         ip::address_v4 locatorAddress = ip::make_address_v4(locatorAddressStr);
 
 #ifndef _WIN32
+        // 非 windows 的系统里面 如果interface_whitelist_ 不为空
         if (!is_interface_whitelist_empty())
         {
             // Either wildcard address or the multicast address needs to be bound on non-windows systems
@@ -466,6 +485,7 @@ bool UDPv4Transport::OpenInputChannel(
             {
                 if (channelResource->iface() == locatorAddressStr)
                 {
+                    // 能找到相应的channelResource
                     found = true;
                     break;
                 }
@@ -477,14 +497,19 @@ bool UDPv4Transport::OpenInputChannel(
                 try
                 {
                     // Bind to multicast address
+                    // 如果没有找到UDPChannelResource，创建一个
                     UDPChannelResource* p_channel_resource;
+                    // locatorAddressStr, locator 一一对应的关系
                     p_channel_resource = CreateInputChannelResource(locatorAddressStr, locator, true, maxMsgSize,
                                     receiver);
                     mInputSockets[IPLocator::getPhysicalPort(locator)].push_back(p_channel_resource);
 
                     // Join group on all whitelisted interfaces
+                    // 配置多播参数
                     for (auto& ip : interface_whitelist_)
                     {
+                        // locatorAddress多播地址，ip是本机地址
+                        // socket 加入多播组
                         p_channel_resource->socket()->set_option(ip::multicast::join_group(locatorAddress, ip));
                     }
                 }
@@ -550,6 +575,7 @@ bool UDPv4Transport::OpenInputChannel(
 std::vector<std::string> UDPv4Transport::get_binding_interfaces_list()
 {
     std::vector<std::string> vOutputInterfaces;
+    // 如果白名单为空，则将0.0.0.0放入
     if (is_interface_whitelist_empty())
     {
         vOutputInterfaces.push_back(s_IPv4AddressAny);
@@ -574,16 +600,19 @@ bool UDPv4Transport::is_interface_allowed(
 bool UDPv4Transport::is_interface_allowed(
         const ip::address_v4& ip) const
 {
+    //白名单为空
     if (interface_whitelist_.empty())
     {
         return true;
     }
 
+    //ip地址为0
     if (ip == ip::address_v4::any())
     {
         return true;
     }
 
+    //在白名单中
     return find(interface_whitelist_.begin(), interface_whitelist_.end(), ip) != interface_whitelist_.end();
 }
 
@@ -595,10 +624,12 @@ bool UDPv4Transport::is_interface_whitelist_empty() const
 bool UDPv4Transport::is_locator_allowed(
         const Locator& locator) const
 {
+    // kind是否一致
     if (!IsLocatorSupported(locator))
     {
         return false;
     }
+    //白名单为空 或者是多播 
     if (interface_whitelist_.empty() || IPLocator::isMulticast(locator))
     {
         return true;
@@ -617,20 +648,26 @@ LocatorList UDPv4Transport::NormalizeLocator(
 {
     LocatorList list;
 
+    // 如果是0.0.0.0的地址，那么获取本地地址 然后 过滤
     if (IPLocator::isAny(locator))
     {
         std::vector<IPFinder::info_IP> locNames;
         get_ipv4s(locNames, false, false);
         for (const auto& infoIP : locNames)
         {
+            //遍历本地地址
             auto ip = asio::ip::make_address_v4(infoIP.name);
+            // 这个地址是否被允许
             if (is_interface_allowed(ip))
             {
+                // port 和 kind 都不变
                 Locator newloc(locator);
+                // 地址是新地址
                 IPLocator::setIPv4(newloc, infoIP.locator);
                 list.push_back(newloc);
             }
         }
+        //没有本地地址，存入回环地址
         if (list.empty())
         {
             Locator newloc(locator);

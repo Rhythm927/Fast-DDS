@@ -44,6 +44,7 @@ static bool is_intraprocess_only(
         (ParticipantFilteringFlags::FILTER_DIFFERENT_HOST | ParticipantFilteringFlags::FILTER_DIFFERENT_PROCESS);
 }
 
+// IPC使用SHM SHM的参数设置
 static std::shared_ptr<fastdds::rtps::SharedMemTransportDescriptor> create_shm_transport(
         const RTPSParticipantAttributes& att,
         const fastdds::rtps::BuiltinTransportsOptions& options)
@@ -52,6 +53,7 @@ static std::shared_ptr<fastdds::rtps::SharedMemTransportDescriptor> create_shm_t
 
     // We assume (Linux) UDP doubles the user socket buffer size in kernel, so
     // the equivalent segment size in SHM would be socket buffer size x 2
+    // 共享内存段大小
     auto segment_size_udp_equivalent =
             std::max(att.sendSocketBufferSize, att.listenSocketBufferSize) * 2;
     descriptor->segment_size(segment_size_udp_equivalent);
@@ -61,6 +63,7 @@ static std::shared_ptr<fastdds::rtps::SharedMemTransportDescriptor> create_shm_t
     return descriptor;
 }
 
+// 默认使用UDPv4 UDPv4的参数设置
 static std::shared_ptr<fastdds::rtps::UDPv4TransportDescriptor> create_udpv4_transport(
         const RTPSParticipantAttributes& att,
         bool intraprocess_only,
@@ -380,7 +383,7 @@ void RTPSParticipantAttributes::setup_transports(
     {
         case fastdds::rtps::BuiltinTransports::NONE:
             break;
-
+        // 默认分支 udpv4
         case fastdds::rtps::BuiltinTransports::DEFAULT:
             setup_transports_default(*this, intraprocess_only, options);
             break;

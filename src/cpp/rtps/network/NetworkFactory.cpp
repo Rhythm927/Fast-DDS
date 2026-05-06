@@ -107,6 +107,7 @@ bool NetworkFactory::BuildReceiverResources(
     {
         if (transport->IsLocatorSupported(local))
         {
+            // 有没有相应的socket
             if (!transport->IsInputChannelOpen(local))
             {
                 uint32_t max_recv_buffer_size = (std::min)(
@@ -139,17 +140,18 @@ bool NetworkFactory::RegisterTransport(
     bool wasRegistered = false;
 
     uint32_t minSendBufferSize = (std::numeric_limits<uint32_t>::max)();
-
+    // create Transport
     std::unique_ptr<TransportInterface> transport(descriptor->create_transport());
 
     if (transport)
     {
         int32_t kind = transport->kind();
         bool is_localhost_allowed = transport->is_localhost_allowed();
-
+        //Transport 初始化 参数配置
         if (transport->init(properties, max_msg_size_no_frag))
         {
             minSendBufferSize = transport->get_configuration()->min_send_buffer_size();
+            // 将transport放入mRegisteredTransports中
             mRegisteredTransports.emplace_back(std::move(transport));
             wasRegistered = true;
         }
@@ -189,11 +191,17 @@ void NetworkFactory::NormalizeLocators(
                 for (auto& transport : mRegisteredTransports)
                 {
                     // Check if the locator is supported and filter unicast locators.
+                    // 三个判断条件，
+                    // transport->IsLocatorSupported 判断kind是否一致
+                    // IPLocator::isMulticast 是否是多播
+                    // transport->is_locator_allowed 是否允许（多播：允许， 单薄：ip地址在白名单允许，ip地址为（0.0.0.0）允许）
+                    ///@attention 把单播 locator 的 0.0.0.0 展开成本机真实 IP 列表，是为了 把“本地监听的通配语义”转换成“对端可用的具体目的地址集合”。
                     if (transport->IsLocatorSupported(loc) &&
                     (IPLocator::isMulticast(loc) ||
                     transport->is_locator_allowed(loc)))
                     {
                         // First found transport that supports it, this will normalize the locator.
+                        // 将transport->NormalizeLocator返回的list ，存入到normalizedLocators中
                         normalizedLocators.push_back(transport->NormalizeLocator(loc));
                         normalized = true;
                     }
@@ -373,10 +381,11 @@ bool NetworkFactory::getDefaultMetatrafficMulticastLocators(
         LocatorList_t& locators,
         uint32_t metatraffic_multicast_port) const
 {
+    // 从所有已注册 transport 中收集默认 discovery 多播 locator，优先使用非 SHM transport 的结果，必要时再用 SHM 兜底。
     bool result = false;
 
     TransportInterface* shm_transport = nullptr;
-
+    // 根据不同的transport设置不同的ip地址和端口号，通过每个transport调用getDefaultMetatrafficMulticastLocators，获取默认的多播地址。
     for (auto& transport : mRegisteredTransports)
     {
         // For better fault-tolerance reasons, SHM metatraffic is avoided if it is already provided
@@ -464,6 +473,8 @@ bool NetworkFactory::configureInitialPeerLocator(
         Locator_t& locator,
         RTPSParticipantAttributes& m_att) const
 {
+    // 把用户配置的 initial peers 转成一组真正可用于 PDP 初始探测的远端 locator 列表。
+    // participant 在发现初期，主动去联系的一批“已知远端地址”。
     bool result = false;
     for (auto& transport : mRegisteredTransports)
     {
