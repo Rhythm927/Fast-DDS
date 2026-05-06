@@ -121,6 +121,7 @@ public:
         RTPSWriter* waux = nullptr;
 
         edp_writer.payload_pool = create_payload_pool(topic_name, history_att, false);
+        // 先创建一个WriterHistory，里面有一个缓存来存储消息，每一个writer要发送的消息都先放入这个缓存中，fastdds 会配置一个机制来管理缓存。
         edp_writer.second = new WriterHistory(history_att, edp_writer.payload_pool);
         bool created = participant->createWriter(&waux, watt, edp_writer.second, listener, entity_id, true);
 

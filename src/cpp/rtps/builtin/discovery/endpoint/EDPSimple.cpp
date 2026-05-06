@@ -428,6 +428,9 @@ bool EDPSimple::createSEDPEndpoints()
     publications_listener_ = new EDPSimplePUBListener(this);
     subscriptions_listener_ = new EDPSimpleSUBListener(this);
 
+    // 组合	含义
+    // pub writer	发送本地 user writer 的信息
+    // sub reader	接收远端 user reader 的信息
     if (m_discovery.discovery_config.m_simpleEDP.use_PublicationWriterANDSubscriptionReader)
     {
         if (!EDPUtils::create_edp_writer(mp_RTPSParticipant, "DCPSPublications", c_EntityId_SEDPPubWriter,
@@ -435,9 +438,9 @@ bool EDPSimple::createSEDPEndpoints()
         {
             return false;
         }
-
+        
         EPROSIMA_LOG_INFO(RTPS_EDP, "SEDP Publication Writer created");
-
+        
         if (!EDPUtils::create_edp_reader(mp_RTPSParticipant, "DCPSSubscriptions", c_EntityId_SEDPSubReader,
                 reader_history_att, ratt, subscriptions_listener_, sub_reader_payload_pool_, subscriptions_reader_))
         {
@@ -447,6 +450,9 @@ bool EDPSimple::createSEDPEndpoints()
         EPROSIMA_LOG_INFO(RTPS_EDP, "SEDP Subscription Reader created");
     }
 
+    // 组合	含义
+    // pub reader	接收远端 user writer 的信息
+    // sub writer	发送本地 user reader 的信息
     if (m_discovery.discovery_config.m_simpleEDP.use_PublicationReaderANDSubscriptionWriter)
     {
         if (!EDPUtils::create_edp_reader(mp_RTPSParticipant, "DCPSPublications", c_EntityId_SEDPPubReader,

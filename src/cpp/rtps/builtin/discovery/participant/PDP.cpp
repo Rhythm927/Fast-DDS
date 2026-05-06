@@ -112,17 +112,21 @@ PDP::PDP (
     size_t max_unicast_locators = allocation.locators.max_unicast_locators;
     size_t max_multicast_locators = allocation.locators.max_multicast_locators;
 
+    // 初始化participant_proxies_pool_
+    // ParticipantProxyData 包含了Participant的信息 
+    // 在pdp发现阶段，会互相发送这些信息给对端
     for (size_t i = 0; i < allocation.participants.initial; ++i)
     {
         participant_proxies_pool_.push_back(new ParticipantProxyData(allocation));
     }
 
+    // ReaderProxyData包含了reader的信息
     for (size_t i = 0; i < allocation.total_readers().initial; ++i)
     {
         reader_proxies_pool_.push_back(new ReaderProxyData(max_unicast_locators, max_multicast_locators,
                 allocation.data_limits, allocation.content_filter));
     }
-
+    // WriterProxyData包含了writer的信息
     for (size_t i = 0; i < allocation.total_writers().initial; ++i)
     {
         writer_proxies_pool_.push_back(new WriterProxyData(max_unicast_locators, max_multicast_locators,
@@ -489,7 +493,7 @@ bool PDP::initPDP(
     mp_RTPSParticipant = part;
     m_discovery = mp_RTPSParticipant->get_attributes().builtin;
     initial_announcements_ = m_discovery.discovery_config.initial_announcements;
-    //CREATE ENDPOINTS
+    //CREATE ENDPOINTS  创建statelessreader 和 statelesswriter
     if (!createPDPEndpoints())
     {
         return false;

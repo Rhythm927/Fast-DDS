@@ -335,6 +335,8 @@ bool UDPTransportInterface::OpenOutputChannel(
     }
 
     std::vector<IPFinder::info_IP> locNames;
+    //获取还没有sender_resource的ip地址
+    //获取本地的ip地址，如果已经有sender_resource了，就去掉
     get_unknown_network_interfaces(sender_resource_list, locNames);
 
     if (locNames.empty() && !first_time_open_output_channel_)
@@ -349,6 +351,7 @@ bool UDPTransportInterface::OpenOutputChannel(
         uint16_t port = configuration()->m_output_udp_socket;
         // If there is no whitelist, we can simply open a generic output socket
         // and gain efficiency.
+        // whitelist 为空
         if (is_interface_whitelist_empty())
         {
             if (first_time_open_output_channel_)
@@ -357,8 +360,10 @@ bool UDPTransportInterface::OpenOutputChannel(
                 // We add localhost output for multicast, so in case the network cable is unplugged, local
                 // participants keep receiving DATA(p) announcements
                 // Also in case that no network interfaces were found
+                // 本地local 的多播，针对的是无网络情况
                 try
                 {
+                    // 根据0.0.0.0创建socket
                     eProsimaUDPSocket unicastSocket = OpenAndBindUnicastOutputSocket(GenerateAnyAddressEndpoint(
                                         port), port);
                     getSocketPtr(unicastSocket)->set_option(ip::multicast::enable_loopback(true));
@@ -375,6 +380,7 @@ bool UDPTransportInterface::OpenOutputChannel(
             }
 
             // Create sockets for outbounding multicast for the other found network interfaces.
+            // 根据外部ip地址创建 sender_resources
             if (!locNames.empty())
             {
                 // Create other socket for outbounding rest of interfaces.
@@ -401,12 +407,14 @@ bool UDPTransportInterface::OpenOutputChannel(
         }
         else
         {
+             //获取还没有sender_resource的ip地址包括回环地址
             get_unknown_network_interfaces(sender_resource_list, locNames, true);
 
             for (const auto& infoIP : locNames)
             {
                 if (is_interface_allowed(infoIP.name))
                 {
+                    // 设置参数
                     eProsimaUDPSocket unicastSocket =
                             OpenAndBindUnicastOutputSocket(generate_endpoint(infoIP.name,
                                     port), port, infoIP.masked_locator);

@@ -1113,6 +1113,7 @@ protected:
         if (async_mode.running.compare_exchange_strong(expected, true))
         {
             // Code for initializing the asynchronous thread.
+            // 会创建一个thread 轮询队列，异步发送消息
             async_mode.thread = create_thread([this]()
                             {
                                 run();

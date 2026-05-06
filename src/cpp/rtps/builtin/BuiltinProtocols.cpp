@@ -80,21 +80,23 @@ bool BuiltinProtocols::initBuiltinProtocols(
     m_initialPeersList = m_att.initialPeersList;
 
     {
+        // shared_mutex 允许“多个读者同时进来，写者独占”
+        // discovery 相关数据通常是“配置好以后大量读取，偶尔更新”，这正适合 shared_mutex
         std::unique_lock<eprosima::shared_mutex> disc_lock(getDiscoveryMutex());
         m_DiscoveryServers = m_att.discovery_config.m_DiscoveryServers;
     }
-
+    // server client 相关的内容
     filter_server_remote_locators(p_part->network_factory());
 
     const RTPSParticipantAllocationAttributes& allocation = p_part->get_attributes().allocation;
 
-    // PDP
+    // PDP 是 Participant Discovery Protocol 阶段，也就是“先发现对端参与者
     switch (m_att.discovery_config.discoveryProtocol)
     {
         case DiscoveryProtocol::NONE:
             EPROSIMA_LOG_WARNING(RTPS_PDP, "No participant discovery protocol specified");
             return true;
-
+        // new了一个PDPSimple
         case DiscoveryProtocol::SIMPLE:
             mp_PDP = new PDPSimple(this, allocation);
             break;
@@ -132,14 +134,14 @@ bool BuiltinProtocols::initBuiltinProtocols(
         return false;
     }
 
-    // WLP
+    // WLP(writer liveness protocol)  为了通知远端的participant，有哪几个writer还活着
     if (m_att.use_WriterLivelinessProtocol)
     {
         mp_WLP = new WLP(this);
         mp_WLP->initWL(mp_participantImpl);
     }
 
-    // TypeLookupManager
+    // TypeLookupManager 管理数据传输类型的类  传输数据会有一定个格式，序列化发序列化能够成功的前提是双方能够约定一个格式类型
     auto type_propagation = p_part->type_propagation();
     bool should_create_typelookup =
             (dds::utils::TypePropagation::TYPEPROPAGATION_ENABLED == type_propagation) ||

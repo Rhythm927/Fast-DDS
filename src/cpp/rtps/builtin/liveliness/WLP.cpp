@@ -198,6 +198,8 @@ bool WLP::initWL(
         int alive_count,
         int not_alive_count) -> void
         {
+            // 管理本地的writer
+            //这个是到livelinessmanager 中TimedEvent被触发的callback 
             pub_liveliness_changed(
                 guid,
                 kind,
@@ -215,6 +217,7 @@ bool WLP::initWL(
         int alive_count,
         int not_alive_count) -> void
         {
+            // 管理remote 的writer
             sub_liveliness_changed(
                 guid,
                 kind,
@@ -236,6 +239,7 @@ bool WLP::initWL(
 
 bool WLP::createEndpoints()
 {
+    // 创建WLP的Writer 和 Reader
     const RTPSParticipantAttributes& pattr = mp_participant->get_attributes();
     const ResourceLimitedContainerConfig& participants_allocation = pattr.allocation.participants;
 

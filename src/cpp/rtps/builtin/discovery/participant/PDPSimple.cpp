@@ -359,10 +359,11 @@ bool PDPSimple::create_dcps_participant_endpoints()
     const EntityId_t writer_entity_id = c_EntityId_SPDPWriter;
 
     // BUILTIN DCPSParticipant READER
+    
     auto& reader = endpoints->reader;
     HistoryAttributes hatt;
     hatt = pdp_reader_history_attributes(builtin_att, allocation);
-
+    // history 内存策略
     PoolConfig reader_pool_cfg = PoolConfig::from_history_attributes(hatt);
     reader.payload_pool_ = TopicPayloadPoolRegistry::get(topic_name, reader_pool_cfg);
     reader.payload_pool_->reserve_history(reader_pool_cfg, true);

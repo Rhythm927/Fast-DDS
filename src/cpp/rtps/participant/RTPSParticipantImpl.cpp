@@ -1086,6 +1086,7 @@ bool RTPSParticipantImpl::create_reader(
     std::string type = (param.endpoint.reliabilityKind == RELIABLE) ? "RELIABLE" : "BEST_EFFORT";
     EPROSIMA_LOG_INFO(RTPS_PARTICIPANT, "Creating reader of type " << type);
     EntityId_t entId;
+    // 获取entId
     if (!preprocess_endpoint_attributes<READER, 0x04, 0x07>(entity_id, IdCounter, param.endpoint, entId))
     {
         return false;
@@ -1105,6 +1106,7 @@ bool RTPSParticipantImpl::create_reader(
         if (m_persistence_guid != c_Guid_Unknown)
         {
             // Generate persistence guid from participant persistence guid
+            // 根据participant 的persistence guid 获取这个reader 的persistence_guid
             param.endpoint.persistence_guid = GUID_t(
                 m_persistence_guid.guidPrefix,
                 entity_id);
@@ -1122,15 +1124,18 @@ bool RTPSParticipantImpl::create_reader(
     bool request_unique_flows = false;
     uint16_t initial_port = 0;
     uint16_t final_port = 0;
+    // 永远返回true
     if (!get_unique_flows_parameters(m_att, param.endpoint, request_unique_flows, initial_port, final_port))
     {
+        //这儿走不到
         return false;
     }
-
+    //给locator 配置端口
     normalize_endpoint_locators(param.endpoint);
 
     BaseReader* SReader = nullptr;
     GUID_t guid(m_guid.guidPrefix, entId);
+    //在这儿创建的是statlessreader
     SReader = callback(guid, param, persistence, param.endpoint.reliabilityKind == RELIABLE);
 
     // restore attributes
@@ -1172,11 +1177,13 @@ bool RTPSParticipantImpl::create_reader(
 
     if (param.endpoint.reliabilityKind == RELIABLE)
     {
+        ///@attention 在RELIABLE 的情况下，需要创建sendresources
         createSendResources(SReader);
     }
 
     if (is_builtin)
     {
+        //设置TrustedWriter 
         SReader->set_trusted_writer(TrustedWriter(SReader->getGuid().entityId));
     }
 
@@ -1276,7 +1283,7 @@ bool RTPSParticipantImpl::create_writer(
         EPROSIMA_LOG_ERROR(RTPS_PARTICIPANT, "WriterHistory needs a change pool to create an RTPSWriter");
         return false;
     }
-
+    // 创建callback，后续被调用到用来创建StatefulWriter
     auto callback = [hist, listen, entityId, this]
             (const GUID_t& guid, WriterAttributes& watt, FlowController* flow_controller,
             IPersistenceService* persistence, bool is_reliable) -> BaseWriter*
@@ -1287,6 +1294,7 @@ bool RTPSParticipantImpl::create_writer(
                 {
                     if (persistence != nullptr)
                     {
+                        // StatefulPersistentWriter会把消息存储在文件系统中
                         writer = new StatefulPersistentWriter(this, guid, watt,
                                         flow_controller, hist, listen, stateful_writer_listener_, persistence);
                     }
@@ -1304,6 +1312,7 @@ bool RTPSParticipantImpl::create_writer(
                     }
                     else if (persistence != nullptr)
                     {
+                        // StatelessPersistentWriter会把消息存储在文件系统中
                         writer = new StatelessPersistentWriter(this, guid, watt,
                                         flow_controller, hist, listen, persistence);
                     }
@@ -1796,6 +1805,7 @@ bool RTPSParticipantImpl::assignEndpointListenResources(
      */
 
     //UNICAST
+    // 将 messageReceiver 与endp关联
     assignEndpoint2LocatorList(endp, endp->getAttributes().unicastLocatorList);
     //MULTICAST
     assignEndpoint2LocatorList(endp, endp->getAttributes().multicastLocatorList);
@@ -1808,6 +1818,7 @@ bool RTPSParticipantImpl::createAndAssociateReceiverswithEndpoint(
         uint16_t initial_unique_port,
         uint16_t final_unique_port)
 {
+    // 给某个 Endpoint 准备“收包能力”并把它挂到合适的接收通道上。
     /*	This function...
         - Asks the network factory for new resources
         - Encapsulates the new resources within the ReceiverControlBlock list
@@ -1816,6 +1827,7 @@ bool RTPSParticipantImpl::createAndAssociateReceiverswithEndpoint(
      */
 
     auto& attributes = pend->getAttributes();
+    // 给这个 endpoint 分配“独立接收流”，通常就是独立端口。
     if (unique_flows)
     {
         attributes.multicastLocatorList.clear();
@@ -1897,14 +1909,16 @@ bool RTPSParticipantImpl::createAndAssociateReceiverswithEndpoint(
             attributes.multicastLocatorList = m_att.defaultMulticastLocatorList;
             attributes.external_unicast_locators = m_att.default_external_unicast_locators;
         }
+        // 创建ReceiverResources，设置标志位开始接收message，true表示receiverresource regisetreceiver上 messagereceiver
         createReceiverResources(attributes.unicastLocatorList, false, true, true);
         createReceiverResources(attributes.multicastLocatorList, false, true, true);
     }
-
+    // 将unicastLocatorList 加到external_unicast_locators 中去
     network::external_locators::set_listening_locators(attributes.external_unicast_locators,
             attributes.unicastLocatorList);
 
     // Associate the Endpoint with ReceiverControlBlock
+    // 将messageReceiver 与endpoint关联
     assignEndpointListenResources(pend);
     return true;
 }
@@ -1950,6 +1964,8 @@ bool RTPSParticipantImpl::createSendResources(
     if (pend->m_att.remoteLocatorList.empty())
     {
         // Adds the default locators of every registered transport.
+        // 如果pend->m_att.remoteLocatorList为空就加入239.255.0.1 和 对应的ipv6的地址
+        // 为空的话，就不变
         m_network_Factory.GetDefaultOutputLocators(pend->m_att.remoteLocatorList);
     }
 
