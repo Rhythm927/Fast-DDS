@@ -107,7 +107,8 @@ bool RTPSMessageGroup::append_submessage()
     //          Final msg Struct: | header_msg_[RTPS + submsg1] | payload | padding | header_msg_[submsg2] | payload | padding | ...
     // Note that case 1 and 2 might be intercalated, combining submessages with and without payloads if the RTPSMessageGroup
     // is shared between different writers
-
+    
+    // 把当前准备好的一个 RTPS submessage 追加到最终待发送的数据块列表 buffers_to_send_ 里。
     uint32_t pos_header = header_msg_->pos;
     uint32_t length_submsg = submessage_msg_->length;
     if (header_msg_->pos == RTPSMESSAGE_HEADER_SIZE && header_msg_->length == RTPSMESSAGE_HEADER_SIZE)
@@ -453,9 +454,10 @@ bool RTPSMessageGroup::insert_submessage(
     if (!check_space(header_msg_, total_size))
     {
         flush();
+        //增加消息接收者的guid_prefix到full_msg_消息体里面去
         add_info_dst_in_buffer(header_msg_, destination_guid_prefix);
     }
-
+    // 将submessage_msg_插入到full_msg_中去
     if (!append_submessage())
     {
         EPROSIMA_LOG_ERROR(RTPS_WRITER, "Cannot add RTPS submesage to the CDRMessage. Buffer too small");
@@ -799,7 +801,7 @@ bool RTPSMessageGroup::add_heartbeat(
         bool livelinessFlag)
 {
     assert(nullptr != sender_);
-
+    // check一下需不需要把之前的message发送掉
     check_and_maybe_flush();
 
 #if HAVE_SECURITY
@@ -807,7 +809,7 @@ bool RTPSMessageGroup::add_heartbeat(
 #endif // if HAVE_SECURITY
 
     const EntityId_t& readerId = get_entity_id(sender_->remote_guids());
-
+    // 配置submessage_msg_，因为是heartbeat，所以配置的submessage 类型就是heartbeat
     if (!RTPSMessageCreator::addSubmessageHeartbeat(submessage_msg_, readerId, endpoint_->getGuid().entityId,
             firstSN, lastSN, count, isFinal, livelinessFlag))
     {
@@ -840,7 +842,7 @@ bool RTPSMessageGroup::add_heartbeat(
         }
     }
 #endif // if HAVE_SECURITY
-
+    //将submessage 插入到fullmessage中去
     return insert_submessage(false);
 }
 

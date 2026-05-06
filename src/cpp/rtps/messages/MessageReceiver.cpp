@@ -369,7 +369,7 @@ void MessageReceiver::processCDRMsg(
 
     {
         std::lock_guard<eprosima::shared_mutex> guard(mtx_);
-
+        //参数重置
         reset();
 
         dest_guid_prefix_ = participantGuidPrefix;
@@ -377,6 +377,7 @@ void MessageReceiver::processCDRMsg(
         msg->pos = 0; //Start reading at 0
 
         //Once everything is set, the reading begins:
+        //检测消息头
         if (!checkRTPSHeader(msg))
         {
             return;
@@ -388,6 +389,7 @@ void MessageReceiver::processCDRMsg(
 
         if (!ignore_submessages)
         {
+            //统计数据
             notify_network_statistics(source_locator, reception_locator, msg);
         }
 
@@ -414,7 +416,7 @@ void MessageReceiver::processCDRMsg(
     // Each submessage processing method choses the lock kind required
     bool valid;
     SubmessageHeader_t submsgh; //Current submessage header
-
+    // 没有越界
     while (msg->pos < msg->length)// end of the message
     {
         CDRMessage_t* submessage = msg;
@@ -437,6 +439,7 @@ void MessageReceiver::processCDRMsg(
 #endif // if HAVE_SECURITY && !defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
 
         //First 4 bytes must contain: ID | flags | octets to next header
+        // 读一下submessage 的head，check一下格式
         if (!readSubmessageHeader(submessage, &submsgh))
         {
             return;

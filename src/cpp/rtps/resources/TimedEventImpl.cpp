@@ -68,14 +68,19 @@ bool TimedEventImpl::update(
         std::chrono::steady_clock::time_point cancel_time)
 {
     StateCode expected = StateCode::READY;
+    // 比较当前值是否为 expected
+    // 如果相等，改成StateCode::WAITING,返回true
+    // 如果不相等，把 state_ 的真实当前值写回 expected，返回 false
     bool set_time = state_.compare_exchange_strong(expected, StateCode::WAITING);
 
     if (set_time)
     {
+        // 设置下一次触发时间
         next_trigger_time_ = current_time + interval_microsec_.load();
     }
     else if (expected == StateCode::INACTIVE)
     {
+        //如果是INACTIVE，把下次触发时间设置成cancel_time
         next_trigger_time_ = cancel_time;
     }
 
@@ -93,11 +98,13 @@ void TimedEventImpl::trigger(
         {
 
             //Exec
+            //执行event 状态转为StateCode::WAITING
             bool restart = callback_();
 
             if (restart)
             {
                 expected = StateCode::INACTIVE;
+                // state_ 与expected StateCode::INACTIVE 相等，为true，state_ 被修改为StateCode::WAITING
                 if (state_.compare_exchange_strong(expected, StateCode::WAITING))
                 {
                     next_trigger_time_ = current_time + interval_microsec_.load();

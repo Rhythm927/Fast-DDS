@@ -191,6 +191,7 @@ void ResourceEvent::event_service()
         }
 
         // If pending timers exist, there is some work to be done, so no need to wait.
+        // 不为空，就跳过剩余的代码，先处理 pending_timers
         if (!pending_timers_.empty())
         {
             continue;
@@ -237,14 +238,19 @@ void ResourceEvent::update_current_time()
     current_time_ = std::chrono::steady_clock::now();
 }
 
+
 void ResourceEvent::do_timer_actions()
 {
+    // pending_timers_：刚被注册/更新/通知，还没正式整理进调度队列
+    // active_timers_：已经在正式等待触发的队列里，而且按触发时间排序
     std::chrono::steady_clock::time_point cancel_time =
             current_time_ + std::chrono::hours(24);
 
     bool did_something = false;
 
     // Process pending orders
+    ///@brief 把“待处理的定时器变更”(pending_timers_) 批量合并到“按触发时间排序的活跃队列”(active_timers_) 中，
+    ///       并确保 active_timers_ 里每个定时器的位置始终按 next_trigger_time() 升序排列。 
     {
         std::lock_guard<TimedMutex> lock(mutex_);
         for (TimedEventImpl* tp : pending_timers_)
