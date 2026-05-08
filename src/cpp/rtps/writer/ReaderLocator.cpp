@@ -122,6 +122,7 @@ bool ReaderLocator::update(
         expects_inline_qos_ = expects_inline_qos;
         ret_val = true;
     }
+    // 不相等 更新  
     if (!(general_locator_info_.unicast == unicast_locators) ||
             !(general_locator_info_.multicast == multicast_locators))
     {
@@ -132,8 +133,9 @@ bool ReaderLocator::update(
             async_locator_info_.unicast = unicast_locators;
             async_locator_info_.multicast = multicast_locators;
         }
-
+        // selector state 清空
         general_locator_info_.reset();
+        // 设置enable 为true 
         general_locator_info_.enable(true);
         async_locator_info_.reset();
         async_locator_info_.enable(true);
@@ -220,7 +222,8 @@ bool ReaderLocator::is_datasharing_reader() const
 }
 
 void ReaderLocator::datasharing_notify()
-{
+{   
+    //是否同进程
     if (is_local_reader())
     {
         LocalReaderPointer::Instance reader = local_reader();

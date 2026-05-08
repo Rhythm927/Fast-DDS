@@ -214,7 +214,7 @@ void StatefulWriter::init(
 
     auto push_mode = PropertyPolicyHelper::find_property(att.endpoint.properties, "fastdds.push_mode");
     push_mode_ = !((nullptr != push_mode) && ("false" == *push_mode));
-
+    //心跳
     periodic_hb_event_ = new TimedEvent(
         pimpl->getEventResource(),
         [&]() -> bool
@@ -222,7 +222,7 @@ void StatefulWriter::init(
             return send_periodic_heartbeat();
         },
         fastdds::rtps::TimeConv::Time_t2MilliSecondsDouble(times_.heartbeat_period));
-
+    //nack response
     nack_response_event_ = new TimedEvent(
         pimpl->getEventResource(),
         [&]() -> bool
@@ -231,9 +231,10 @@ void StatefulWriter::init(
             return false;
         },
         fastdds::rtps::TimeConv::Time_t2MilliSecondsDouble(times_.nack_response_delay));
-
+    // positive_acks就是收到消息之后马上回个消息
     if (disable_positive_acks_)
     {
+        // 收到一个消息，设置超时时间，到时间发送ack
         ack_event_ = new TimedEvent(
             pimpl->getEventResource(),
             [&]() -> bool
@@ -528,6 +529,7 @@ void StatefulWriter::send_heartbeat_to_all_readers(
 {
     // This method is only called from send_periodic_heartbeat
 
+    // 如果history中有没有被reader ack的消息，需要调用send_heartbeat_to_all_readers
     if (separate_sending_enabled_ || force_separating)
     {
         for (ReaderProxy* reader : matched_remote_readers_)
@@ -988,6 +990,10 @@ bool StatefulWriter::matched_reader_add_edp(
     std::unique_lock<LocatorSelectorSender> guard_locator_selector_async(locator_selector_async_);
 
     // Check if it is already matched.
+    // 先查找这个statefulwriter已经匹配的reader，如果有的话，就更新信息
+    // matched_local_readers_ 本地reader，同一个进程的reader
+    // matched_datasharing_readers_ 共享内存的reader， 跨进程的reader
+  	// matched_remote_readers_ 远程的reader
     if (for_matched_readers(matched_local_readers_, matched_datasharing_readers_, matched_remote_readers_,
             [this, &rdata](ReaderProxy* reader)
             {
@@ -996,6 +1002,7 @@ bool StatefulWriter::matched_reader_add_edp(
                     EPROSIMA_LOG_INFO(RTPS_WRITER, "Attempting to add existing reader, updating information.");
                     if (reader->update(rdata))
                     {
+                        // 更新已有的ReaderProxy的信息
                         filter_remote_locators(*reader->general_locator_selector_entry(),
                         m_att.external_unicast_locators, m_att.ignore_non_matching_locators);
                         filter_remote_locators(*reader->async_locator_selector_entry(),
@@ -1032,6 +1039,7 @@ bool StatefulWriter::matched_reader_add_edp(
     }
 
     // Get a reader proxy from the inactive pool (or create a new one if necessary and allowed)
+    // 创建一个ReaderProxy，先看一下缓存中有没有，有就从缓存中取一个，没有就创建一个
     ReaderProxy* rp = nullptr;
     if (matched_readers_pool_.empty())
     {
@@ -1056,14 +1064,17 @@ bool StatefulWriter::matched_reader_add_edp(
     }
 
     // Add info of new datareader.
+    // 将信息填入ReaderProxy的对象
     rp->start(rdata, is_datasharing_compatible_with(rdata.data_sharing));
     filter_remote_locators(*rp->general_locator_selector_entry(),
             m_att.external_unicast_locators, m_att.ignore_non_matching_locators);
     filter_remote_locators(*rp->async_locator_selector_entry(),
             m_att.external_unicast_locators, m_att.ignore_non_matching_locators);
+    //加入远端的同步发送地址
     locator_selector_general_.locator_selector.add_entry(rp->general_locator_selector_entry());
+    //加入远端的异步发送地址
     locator_selector_async_.locator_selector.add_entry(rp->async_locator_selector_entry());
-
+    //将rp(ReaderProxy)加入相应的地方
     if (rp->is_local_reader())
     {
         matched_local_readers_.push_back(rp);
@@ -1087,9 +1098,10 @@ bool StatefulWriter::matched_reader_add_edp(
     }
 
     mp_RTPSParticipant->createSenderResources(rdata.remote_locators, m_att);
+    //更新reader的信息
     update_reader_info(locator_selector_general_, true);
     update_reader_info(locator_selector_async_, true);
-
+    //如果是跨进程的reader，就返回
     if (rp->is_datasharing_reader())
     {
         if (nullptr != listener_)
@@ -1117,6 +1129,7 @@ bool StatefulWriter::matched_reader_add_edp(
     bool is_reliable = rp->is_reliable();
     if (is_reliable)
     {
+        //本地消息的index号的范围
         SequenceNumber_t min_seq = get_seq_num_min();
         SequenceNumber_t last_seq = get_seq_num_max();
         RTPSMessageGroup group(mp_RTPSParticipant, this, rp->message_sender());
@@ -1131,6 +1144,7 @@ bool StatefulWriter::matched_reader_add_edp(
             try
             {
                 // Late-joiner
+                // 队列内消息的处理，如果策略是之前的旧消息也需要发送给新的reader，则将旧消息放入发送队列
                 if (TRANSIENT_LOCAL <= rp->durability_kind() &&
                         TRANSIENT_LOCAL <= m_att.durabilityKind)
                 {
@@ -1165,12 +1179,14 @@ bool StatefulWriter::matched_reader_add_edp(
                     else
                     {
                         // Send a GAP of the whole history.
+                        // 发送gap消息，告诉reader，我这边有这些消息，但是这些消息不能发送给你
                         group.add_gap(min_seq, SequenceNumberSet_t(history_->next_sequence_number()), rp->guid());
                     }
                 }
 
                 // Always activate heartbeat period. We need a confirmation of the reader.
                 // The state has to be updated.
+                // 周期性地发送心跳包
                 periodic_hb_event_->restart_timer(std::chrono::steady_clock::now() + std::chrono::hours(24));
             }
             catch (const RTPSMessageGroup::timeout&)
@@ -1181,17 +1197,21 @@ bool StatefulWriter::matched_reader_add_edp(
 
         if (rp->is_local_reader())
         {
+            //发送本地的心跳包
             intraprocess_heartbeat(rp);
         }
         else
         {
+            //发送远程的心跳包
             send_heartbeat_nts_(1u, group, disable_positive_acks_);
+            //真正的发送动作在这儿执行
             group.flush_and_reset();
         }
     }
     else
     {
         // Acknowledged all for best-effort reader.
+        // 如果是best-effrot reader 将所有历史消息设置为，对端发送了回执消息
         rp->acked_changes_set(history_->next_sequence_number());
     }
 
@@ -1702,11 +1722,13 @@ bool StatefulWriter::send_periodic_heartbeat(
         bool final,
         bool liveliness)
 {
+    // 周期性发送心跳
     std::lock_guard<RecursiveTimedMutex> guardW(mp_mutex);
     std::lock_guard<LocatorSelectorSender> guard_locator_selector_general(locator_selector_general_);
 
     bool unacked_changes {false};
     bool irrelevants_removed {false};
+    //不是保活相关的包
     if (!liveliness)
     {
         SequenceNumber_t first_seq_to_check_acknowledge = get_seq_num_min();
@@ -1958,11 +1980,16 @@ bool StatefulWriter::process_acknack(
         bool& result,
         fastdds::rtps::VendorId_t /*origin_vendor_id*/)
 {
+    ///@brief 这段是 StatefulWriter 收到 reader 发来的 ACKNACK 后，更新该 reader 的可靠状态，
+    // 并决定是否重发 DATA、发 GAP、发 HEARTBEAT、或者清理 history。
     std::unique_lock<RecursiveTimedMutex> lock(mp_mutex);
     result = (m_guid == writer_guid);
 
     if (result)
     {
+        // SequenceNumber_t {base bitmap/set}
+        // 小于 base 的序号，reader 已经不再请求了，可以认为 ACK 了。
+        // set 里列出的序号，是 reader 缺失、希望 writer 重发的。
         SequenceNumber_t received_sequence_number = sn_set.empty() ? sn_set.base() : sn_set.max();
         if (received_sequence_number <= next_sequence_number())
         {
@@ -1971,10 +1998,12 @@ bool StatefulWriter::process_acknack(
                     {
                         if (remote_reader->guid() == reader_guid)
                         {
+                            // ACKNACK count 去重
                             if (remote_reader->check_and_set_acknack_count(ack_count))
                             {
                                 // Sequence numbers before Base are set as Acknowledged.
                                 remote_reader->acked_changes_set(sn_set.base());
+                                // 如果是正常 ACKNACK，处理缺失请求
                                 if (sn_set.base() > SequenceNumber_t(0, 0))
                                 {
                                     // Prepare GAP for requested  samples that are not in history or are irrelevants.

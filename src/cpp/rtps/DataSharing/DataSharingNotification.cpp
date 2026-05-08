@@ -54,6 +54,7 @@ bool DataSharingNotification::create_and_init_notification(
         const GUID_t& reader_guid,
         const std::string& shared_dir)
 {
+    // 这里面分为2种情况：共享内存和共享文件，一个将内存映射到各自进程，一个将文件映射到各自进程
     if (shared_dir.empty())
     {
         return create_and_init_shared_segment_notification<fastdds::rtps::SharedMemSegment>(reader_guid,

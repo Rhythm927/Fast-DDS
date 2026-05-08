@@ -465,6 +465,7 @@ fastdds::rtps::SequenceNumber_t BaseReader::update_last_notified(
         const fastdds::rtps::GUID_t& guid,
         const fastdds::rtps::SequenceNumber_t& seq)
 {
+    ///@brief 查询某个 writer 上一次已经通知/处理到的最大 sequence number。
     fastdds::rtps::SequenceNumber_t ret_val;
     std::lock_guard<decltype(mp_mutex)> guard(mp_mutex);
     fastdds::rtps::GUID_t guid_to_look = guid;
@@ -480,7 +481,7 @@ fastdds::rtps::SequenceNumber_t BaseReader::update_last_notified(
         ret_val = p_seq->second;
     }
 
-    if (ret_val < seq)
+    if (ret_val < seq) // 去重/过滤旧包：只有收到的 seq 大于该 writer 上次已通知的 seq，才继续处理。
     {
         history_state_->history_record[guid_to_look] = seq;
         persist_last_notified_nts(guid_to_look, seq);

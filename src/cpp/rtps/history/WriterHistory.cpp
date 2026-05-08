@@ -166,6 +166,8 @@ bool WriterHistory::prepare_and_add_change(
         return false;
     }
 
+    // 每个change有一个唯一的sequenceNumber，是由WriterHistory的m_lastCacheChangeSeqNum 赋值的
+
     ++m_lastCacheChangeSeqNum;
     a_change->sequenceNumber = m_lastCacheChangeSeqNum;
     if (wparams.source_timestamp().seconds() < 0)
@@ -182,6 +184,7 @@ bool WriterHistory::prepare_and_add_change(
     // Updated sample and related sample identities on the user's write params
     wparams.sample_identity().writer_guid(a_change->writerGUID);
     wparams.sample_identity().sequence_number(a_change->sequenceNumber);
+    // 这个能够帮助回复的消息 和 请求的消息相关联
     wparams.related_sample_identity(wparams.sample_identity());
     set_fragments(a_change);
 
@@ -210,6 +213,7 @@ bool WriterHistory::add_change_(
         WriteParams& wparams,
         std::chrono::time_point<std::chrono::steady_clock> max_blocking_time)
 {
+    // WriterHistory存放了所有需要发送的消息
     if (mp_writer == nullptr || mp_mutex == nullptr)
     {
         EPROSIMA_LOG_ERROR(RTPS_WRITER_HISTORY,
@@ -218,11 +222,12 @@ bool WriterHistory::add_change_(
     }
 
     std::lock_guard<RecursiveTimedMutex> guard(*mp_mutex);
+    // 将change 放入 WriterHistory中
     if (!prepare_and_add_change(a_change, wparams))
     {
         return false;
     }
-
+    // 主要是告知writer
     notify_writer(a_change, max_blocking_time);
 
     return true;

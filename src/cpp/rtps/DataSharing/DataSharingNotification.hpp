@@ -140,6 +140,7 @@ protected:
             const std::string& shared_dir)
     {
         segment_id_ = reader_guid;
+        //生成共享内存的名字
         segment_name_ = generate_segment_name(shared_dir, reader_guid);
         std::unique_ptr<T> local_segment;
 

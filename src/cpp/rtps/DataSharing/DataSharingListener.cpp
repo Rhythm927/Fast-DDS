@@ -56,13 +56,16 @@ DataSharingListener::~DataSharingListener()
 
 void DataSharingListener::run()
 {
-    while (is_running_.load())
+    // 事件驱动 + 醒来一次，best effort 处理完
+    // 获取锁  
+    while (is_running_.load()) // 线程的生命周期循环，只要 listener 还在运行就一直等通知
     {
         try
         {
             std::unique_lock<Segment::mutex> lock(notification_->notification_->notification_mutex);
             notification_->notification_->notification_cv.wait(lock, [&]
                     {
+                        // 不 running || 有新的data  查看一下有没有新数据过来
                         return !is_running_.load() || notification_->notification_->new_data.load();
                     });
         }
@@ -77,8 +80,11 @@ void DataSharingListener::run()
             // Woke up because listener is stopped
             return;
         }
-
-        do
+        // 因为在你处理这批数据的过程中，可能又发生两类新变化：
+        // 又有 writer 写入了新数据，于是 new_data == true
+        // 有 writer 匹配/取消匹配了，导致 writer_pools_ 集合变化，于是 writer_pools_changed_ == true
+        // 一次被唤醒之后，尽量把这一波变化都处理完，不急着重新睡眠
+        do  
         {
             process_new_data();
 
@@ -95,14 +101,16 @@ void DataSharingListener::start()
 {
     std::lock_guard<std::mutex> guard(mutex_);
 
-    // Check the thread
+    // Check the thread 
+    // 读取 is_running_ 之前的值
+    // 把 is_running_ 改成 true
     bool was_running = is_running_.exchange(true);
     if (was_running)
     {
         return;
     }
 
-    // Initialize the thread
+    // Initialize the thread 获取低16bit
     uint32_t thread_id = reader_->getGuid().entityId.to_uint32() & 0x0000FFFF;
     listening_thread_ = create_thread([this]()
                     {
@@ -142,8 +150,10 @@ void DataSharingListener::process_new_data ()
     // Loop on the writers looking for data not read yet
     for (auto it = writer_pools_.begin(); it != writer_pools_.end(); ++it)
     {
+        // 从writer_pools_中找到writer，处理新数据
         //First see if we have some liveliness asertion pending
         bool liveliness_assertion_needed = false;
+        // 先检查 liveliness 是否有新断言
         uint32_t new_assertion_sequence = it->pool->last_liveliness_sequence();
         if (it->last_assertion_sequence != new_assertion_sequence)
         {
@@ -166,11 +176,14 @@ void DataSharingListener::process_new_data ()
         {
             CacheChange_t ch;
             SequenceNumber_t last_sequence = c_SequenceNumber_Unknown;
+            //从共享内存中获取CacheChange_t对象
             pool->get_next_unread_payload(ch, last_sequence, last_payload);
             has_new_payload = ch.sequenceNumber != c_SequenceNumber_Unknown;
 
             if (has_new_payload && ch.sequenceNumber > SequenceNumber_t(0, 0))
             {
+                //gap消息是 Writer发送给Reader，标识HistoryCache中的一些Change不再可用，也不会再发给Reader
+                //根据收到的消息的sequenceNumber，来确定是否有些消息 已经永久丢失，相当于模拟了一条gap消息出来，处理一些永久丢失的消息
                 if (last_sequence != c_SequenceNumber_Unknown && ch.sequenceNumber > last_sequence + 1)
                 {
                     EPROSIMA_LOG_WARNING(RTPS_READER,

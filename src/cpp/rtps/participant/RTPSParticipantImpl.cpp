@@ -787,7 +787,7 @@ void RTPSParticipantImpl::enable()
     // 启动 RTPS 的内建协议，最重要的就是发现相关协议
     mp_builtinProtocols->enable();
 
-    //Start reception 注册接收资源
+    //Start reception 注册接收资源  messagereceiver 与receiverresource 关联在一起
     for (auto& receiver : m_receiverResourcelist)
     {
         receiver.Receiver->RegisterReceiver(receiver.mp_receiver);
@@ -1792,7 +1792,7 @@ bool RTPSParticipantImpl::check_entity_id_conditions(
 /*
  *
  * RECEIVER RESOURCE METHODS
- *
+ *  将messagereceiver与endpoint（reader 或者writer） 关联
  */
 bool RTPSParticipantImpl::assignEndpointListenResources(
         Endpoint* endp)

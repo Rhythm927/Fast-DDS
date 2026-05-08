@@ -224,6 +224,7 @@ void MessageReceiver::process_data_message_without_security(
         CacheChange_t& change,
         bool /*was_decoded*/)
 {
+    // 由 reader 处理
     auto process_message = [&change](BaseReader* reader)
             {
                 reader->process_data_msg(&change);
@@ -1117,6 +1118,7 @@ bool MessageReceiver::proc_Submsg_Heartbeat(
         return false;
     }
     uint32_t HBCount {0};
+    //读取HBCount，这个数值表示是第几个心跳
     if (!CDRMessage::readUInt32(msg, &HBCount))
     {
         EPROSIMA_LOG_WARNING(RTPS_MSG_IN, IDSTRING "Unable to read heartbeat count from heartbeat message");
@@ -1178,7 +1180,7 @@ bool MessageReceiver::proc_Submsg_Acknack(
         return false;
     }
 
-    //Look for the correct writer to use the acknack
+    // Look for the correct writer to use the acknack
     for (BaseWriter* it : associated_writers_)
     {
 #if HAVE_SECURITY

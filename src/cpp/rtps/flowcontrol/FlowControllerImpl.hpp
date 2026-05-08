@@ -137,12 +137,21 @@ private:
             return &tail == head.writer_info.next;
         }
 
+        
         void add_change(
                 CacheChange_t* change) noexcept
         {
+            ///@brief 如果 history 满了、payload 不合法、资源策略不允许，就可能失败。
+            // 发送新的消息 将消息存在new_interested中去
             bool expected = false;
+            // 如果 is_linked 当前值 == expected，也就是 false，
+            // 就把 is_linked 改成 true，并返回 true。
+            // 如果 is_linked 当前不是 false，
+            // 说明这个 change 已经在某个链表里了，
+            // 就不再重复插入。
             if (change->writer_info.is_linked.compare_exchange_strong(expected, true))
             {
+                // 是在做一个双向链表尾插。链表有两个哨兵节点
                 change->writer_info.previous = tail.writer_info.previous;
                 change->writer_info.previous->writer_info.next = change;
                 tail.writer_info.previous = change;
@@ -1104,9 +1113,13 @@ protected:
 
     /*!
      * Initialize asynchronous thread.
+        //如果不是纯同步的模式，运行一个线程来发送非同步的消息
+        //纯同步的模式不会有异步线程来发送消息
+        ///@note enable_if 放在返回类型（完全合法）
      */
-    template<typename PubMode = PublishMode>
-    typename std::enable_if<!std::is_same<FlowControllerPureSyncPublishMode, PubMode>::value, void>::type
+    template<typename PubMode = PublishMode> 
+    // 这是返回类型
+    typename std::enable_if<!std::is_same<FlowControllerPureSyncPublishMode, PubMode>::value, void>::type 
     initialize_async_thread()
     {
         bool expected = false;
@@ -1170,6 +1183,7 @@ protected:
      *
      * @note Before calling this function, the change's writer mutex have to be locked.
      */
+    // SFINE 模式，只有“非 PureSync”模式才会编译出这个函数
     template<typename PubMode = PublishMode>
     typename std::enable_if<!std::is_same<FlowControllerPureSyncPublishMode, PubMode>::value, bool>::type
     enqueue_new_sample_impl(
@@ -1199,6 +1213,7 @@ protected:
      *  In this case there is no async mechanism.
      */
     template<typename PubMode = PublishMode>
+    // 纯同步的模式，不会放入队列，使用异步线程发送
     typename std::enable_if<std::is_same<FlowControllerPureSyncPublishMode, PubMode>::value, bool>::type
     constexpr enqueue_new_sample_impl(
             BaseWriter*,
@@ -1307,6 +1322,7 @@ protected:
             CacheChange_t*,
             const std::chrono::time_point<std::chrono::steady_clock>&) const
     {
+        // 纯同步模式 直接返回false FlowControllerPureSyncPublishMode
         return false;
     }
 
@@ -1398,6 +1414,8 @@ protected:
         while (async_mode.running)
         {
             // There are writers interested in removing a sample.
+            // 这是async_mode的一个变量，起到了一个锁的作用
+            // 当有writer想要remove change的时候就跳过，不执行操作
             if (0 != async_mode.writers_interested_in_remove)
             {
                 continue;
@@ -1406,12 +1424,14 @@ protected:
             std::unique_lock<fastdds::TimedMutex> lock(mutex_);
             CacheChange_t* change_to_process = nullptr;
 
-            //Check if we have to sleep.
+            // Check if we have to sleep.
             {
                 std::unique_lock<fastdds::TimedMutex> in_lock(async_mode.changes_interested_mutex);
                 // Add interested changes into the queue.
+                // 将 new_interested_ 存入new_ones_ && 将 old_interested_ 存入到 old_ones_
                 sched.add_interested_changes_to_queue_nts();
 
+                //如果get_next_change_nts 为空，则继续循环  
                 while (async_mode.running &&
                         (async_mode.force_wait() || nullptr == (change_to_process = sched.get_next_change_nts())))
                 {
@@ -1425,8 +1445,10 @@ protected:
 
                     if (ret)
                     {
+                        // 重置带宽限制
                         sched.trigger_bandwidth_limit_reset();
                     }
+                    // 将 new_interested_ 存入new_ones_ && 将 old_interested_ 存入到 old_ones_
                     sched.add_interested_changes_to_queue_nts();
                 }
             }
@@ -1435,6 +1457,8 @@ protected:
             while (nullptr != change_to_process)
             {
                 // Fast check if next change will enter.
+                // 带宽限制，带宽达到上限，则break   
+                // 这个只有在FlowControllerLimitedAsyncPublishMode 才起作用
                 if (!async_mode.fast_check_is_there_slot_for_change(change_to_process))
                 {
                     break;
@@ -1455,11 +1479,13 @@ protected:
 
                 LocatorSelectorSender& locator_selector =
                         current_writer->get_async_locator_selector();
+                // 设置writer 和 locator_selector   
                 async_mode.group.sender(current_writer, &locator_selector);
                 locator_selector.lock();
 
                 // Remove previously from queue, because deliver_sample_nts could call FlowController::remove_sample()
                 // provoking a deadlock.
+                // 下面代码主要从队列中取出
                 CacheChange_t* previous = change_to_process->writer_info.previous;
                 CacheChange_t* next = change_to_process->writer_info.next;
                 previous->writer_info.next = next;
@@ -1468,10 +1494,12 @@ protected:
                 change_to_process->writer_info.next = nullptr;
                 change_to_process->writer_info.is_linked.store(false);
 
+                //这里面是statefulwriter的deliver_sample_nts
                 DeliveryRetCode ret_delivery = current_writer->deliver_sample_nts(
                     change_to_process, async_mode.group, locator_selector,
                     std::chrono::steady_clock::now() + std::chrono::hours(24));
 
+                //如果发送失败，则将change放回队列中去
                 if (DeliveryRetCode::DELIVERED != ret_delivery)
                 {
                     // If delivery fails, put the change again in the queue.
@@ -1497,15 +1525,18 @@ protected:
                 if (0 != async_mode.writers_interested_in_remove)
                 {
                     // There are writers that want to remove samples.
+                    // 跳出循环
                     break;
                 }
 
                 // Add interested changes into the queue.
+                // 将 new_interested_ 存入new_ones_ && 将 old_interested_ 存入到 old_ones_
                 {
                     std::unique_lock<fastdds::TimedMutex> in_lock(async_mode.changes_interested_mutex);
                     sched.add_interested_changes_to_queue_nts();
                 }
 
+                //获取下一个要发送的change
                 change_to_process = sched.get_next_change_nts();
             }
 

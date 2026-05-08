@@ -282,6 +282,7 @@ void StatelessWriter::unsent_change_added_to_history(
 
     if (liveliness_lease_duration_ < dds::c_TimeInfinite)
     {
+        // 发送liveness的包
         mp_RTPSParticipant->wlp()->assert_liveliness(
             getGuid(),
             liveliness_kind_,
@@ -292,12 +293,15 @@ void StatelessWriter::unsent_change_added_to_history(
     // This also prepares the metadata for late-joiners
     if (is_datasharing_compatible())
     {
+        // 同进程，跨进程消息
         datasharing_delivery(change);
     }
 
     // Now for the rest of readers
     if (!fixed_locators_.empty() || get_matched_readers_size() > 0)
     {
+        // 只有在fixed_locators_不为空或者getMatchedReadersSize()>0的时候才会调用这个函数 
+        // 将消息放入flow_controller*中
         flow_controller_->add_new_sample(this, change, max_blocking_time);
     }
     else
@@ -462,13 +466,16 @@ bool StatelessWriter::matched_reader_add_edp(
     std::unique_lock<LocatorSelectorSender> locator_selector_guard(locator_selector_);
 
     assert(data.guid != c_Guid_Unknown);
-
+     //  先遍历matched_local_readers_ 再遍历matched_datasharing_readers_ 再遍历matched_remote_readers_
+     //  如果之前有相关reader，更新reader的信息
+     //  ReaderLocator    
     if (for_matched_readers(matched_local_readers_, matched_datasharing_readers_, matched_remote_readers_,
             [this, &data](ReaderLocator& reader)
             {
                 if (reader.remote_guid() == data.guid)
                 {
                     EPROSIMA_LOG_WARNING(RTPS_WRITER, "Attempting to add existing reader, updating information.");
+                    // 更新信息
                     if (reader.update(data.remote_locators.unicast,
                     data.remote_locators.multicast,
                     data.expects_inline_qos))
@@ -506,6 +513,7 @@ bool StatelessWriter::matched_reader_add_edp(
 
     // Get a locator from the inactive pool (or create a new one if necessary and allowed)
     std::unique_ptr<ReaderLocator> new_reader;
+    // new_reader 从pool中分配一个内存  
     if (matched_readers_pool_.empty())
     {
         size_t max_readers = matched_readers_pool_.max_size();
@@ -513,7 +521,7 @@ bool StatelessWriter::matched_reader_add_edp(
         {
             const RemoteLocatorsAllocationAttributes& loc_alloc =
                     mp_RTPSParticipant->get_attributes().allocation.locators;
-
+            //设置new_reader的locators的数量限制
             new_reader.reset(new ReaderLocator(
                         this,
                         loc_alloc.max_unicast_locators,
@@ -532,14 +540,16 @@ bool StatelessWriter::matched_reader_add_edp(
     }
 
     // Add info of new datareader.
+    // 创建readerlocator  
     new_reader->start(data.guid,
             data.remote_locators.unicast,
             data.remote_locators.multicast,
             data.expects_inline_qos,
             is_datasharing_compatible_with(data.data_sharing));
+    //过滤locator  
     filter_remote_locators(*new_reader->general_locator_selector_entry(),
             m_att.external_unicast_locators, m_att.ignore_non_matching_locators);
-
+    //加入readerlocator中的locator_selector
     locator_selector_.locator_selector.add_entry(new_reader->general_locator_selector_entry());
 
     if (new_reader->is_local_reader())

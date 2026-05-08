@@ -62,12 +62,14 @@ UDPChannelResource::~UDPChannelResource()
 void UDPChannelResource::perform_listen_operation(
         Locator input_locator)
 {
+    // 轮训函数
     Locator remote_locator;
 
     while (alive())
     {
         // Blocking receive.
         auto& msg = message_buffer();
+        // 接收消息
         if (!Receive(msg.buffer, msg.max_size, msg.length, remote_locator))
         {
             continue;
@@ -96,7 +98,7 @@ bool UDPChannelResource::Receive(
     try
     {
         asio::ip::udp::endpoint senderEndpoint;
-
+        // 接收udp message，同时获取发送端的ip地址 和 port端口号
         size_t bytes = socket()->receive_from(asio::buffer(receive_buffer, receive_buffer_capacity), senderEndpoint);
         receive_buffer_size = static_cast<uint32_t>(bytes);
         if (receive_buffer_size > 0)
@@ -106,6 +108,7 @@ bool UDPChannelResource::Receive(
             {
                 return false;
             }
+            // 将发送端的ip地址 和 port端口号 赋值给remote_locator
             transport_->endpoint_to_locator(senderEndpoint, remote_locator);
         }
         return (receive_buffer_size > 0);

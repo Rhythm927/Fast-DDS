@@ -370,6 +370,7 @@ void BaseWriter::compute_selected_guids(
 void BaseWriter::update_cached_info_nts(
         LocatorSelectorSender& locator_selector)
 {
+    // 全部enable，将之前的状态放入last_state_  
     locator_selector.locator_selector.reset(true);
     mp_RTPSParticipant->network_factory().select_locators(locator_selector.locator_selector);
 }

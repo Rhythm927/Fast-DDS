@@ -697,8 +697,13 @@ void UDPTransportInterface::select_locators(
             // First try to find a multicast locator which is at least on another list.
             for (size_t j = 0; j < entry->multicast.size() && !selected; ++j)
             {
+                // check 一下transport 支持不支持
                 if (IsLocatorSupported(entry->multicast[j]))
                 {
+                    // 从i+1开始遍历entries，查找entry->multicast[j]，将transport_should_process 置为false
+                    // 如果返回true entry->multicast[j]将会被选择 
+                    ///@brief 在一堆待处理的远端（entries）里，
+                    //        尽量挑一个“大家都能用的同一个 multicast locator”，并把后面重复的条目失效掉，避免重复发送。
                     if (check_and_invalidate(entries, i + 1, entry->multicast[j]))
                     {
                         entry->state.multicast.push_back(j);

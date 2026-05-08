@@ -53,17 +53,25 @@ PDPListener::PDPListener(
 {
 }
 
+//  SPDPReader 收到远端 Participant 声明后，PDP 真正处理发现数据的入口。
+// ALIVE        -> 远端 participant 上线/刷新声明
+// 非 ALIVE     -> 远端 participant dispose/unregister，表示移除
 void PDPListener::on_new_cache_change_added(
         RTPSReader* reader,
         const CacheChange_t* const change_in)
+        ///@brief 把 SPDP 网络包里的 Participant 数据解析出来，
+        // 判断是新 participant、更新、重复包还是删除，
+        // 然后维护 PDP 的远端 participant 表，并触发后续 builtin endpoints 的匹配。
 {
     CacheChange_t* change = const_cast<CacheChange_t*>(change_in);
+    // 远端的id 
     GUID_t writer_guid = change->writerGUID;
     EPROSIMA_LOG_INFO(RTPS_PDP, "SPDP Message received from: " << writer_guid);
 
     // Make sure we have an instance handle (i.e GUID)
     if (change->instanceHandle == c_InstanceHandle_Unknown)
     {
+        // 如果没有guid，从mp_PDPReaderHistory 中移除
         if (!this->get_key(change))
         {
             EPROSIMA_LOG_WARNING(RTPS_PDP, "Problem getting the key of the change, removing");
@@ -74,11 +82,14 @@ void PDPListener::on_new_cache_change_added(
 
     // Take GUID from instance handle
     GUID_t guid;
+    // writer_guid = 远端 SPDPWriter 的 GUID
+    // guid        = 远端 Participant 的 GUID
     iHandle2GUID(guid, change->instanceHandle);
-
+    //如果alive 处理change的信息
     if (change->kind == ALIVE)
     {
         // Ignore announcement from own RTPSParticipant
+        // 因为 multicast 场景下，本机可能收到自己发出去的 SPDP 包。收到自己的包没有意义，直接移除。
         if (guid == parent_pdp_->getRTPSParticipant()->getGuid())
         {
             EPROSIMA_LOG_INFO(RTPS_PDP, "Message from own RTPSParticipant, removing");
@@ -88,11 +99,12 @@ void PDPListener::on_new_cache_change_added(
 
         // Release reader lock to avoid ABBA lock. PDP mutex should always be first.
         // Keep change information on local variables to check consistency later
+        // 保证 PDP mutex 和 Reader mutex 的获取顺序一致。
         SequenceNumber_t seq_num = change->sequenceNumber;
         reader->getMutex().unlock();
         std::unique_lock<std::recursive_mutex> lock(*parent_pdp_->getMutex());
         reader->getMutex().lock();
-
+        // 重新拿锁后，change 可能已经被别的线程改了，所以做一致性检查：
         // If change is not consistent, it will be processed on the thread that has overriten it
         if ((ALIVE != change->kind) || (seq_num != change->sequenceNumber) || (writer_guid != change->writerGUID))
         {
@@ -104,6 +116,7 @@ void PDPListener::on_new_cache_change_added(
         // Load information on temp_participant_data_
         CDRMessage_t msg(change->serializedPayload);
         temp_participant_data_.clear();
+        // 解析msg消息，放入temp_participant_data_
         if (temp_participant_data_.read_from_cdr_message(&msg, true,
                 parent_pdp_->getRTPSParticipant()->network_factory(),
                 true, change_in->vendor_id))
@@ -124,6 +137,8 @@ void PDPListener::on_new_cache_change_added(
 
             // Filter locators
             const auto& pattr = parent_pdp_->getRTPSParticipant()->get_attributes();
+            // 过滤
+            // 一个新加的功能，将temp_participant_data_中的ip地址进行过滤
             fastdds::rtps::network::external_locators::filter_remote_locators(temp_participant_data_,
                     pattr.builtin.metatraffic_external_unicast_locators, pattr.default_external_unicast_locators,
                     pattr.ignore_non_matching_locators);
@@ -162,6 +177,7 @@ void PDPListener::on_new_cache_change_added(
     else if (reader->matched_writer_is_matched(writer_guid))
     {
         reader->getMutex().unlock();
+        // 如果不是ALIVE就意味着对端的Participant已经下线
         if (parent_pdp_->remove_remote_participant(guid, ParticipantDiscoveryStatus::REMOVED_PARTICIPANT))
         {
 #ifdef FASTDDS_STATISTICS

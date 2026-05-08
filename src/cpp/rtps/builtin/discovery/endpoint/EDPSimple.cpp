@@ -763,9 +763,9 @@ void EDPSimple::assignRemoteEndpoints(
     uint32_t auxendp;
     bool use_multicast_locators = !mp_PDP->getRTPSParticipant()->get_attributes().builtin.avoid_builtin_multicast ||
             pdata.metatraffic_locators.unicast.empty();
-
+    // 从缓存池中取一个temp_reader_proxy_data
     auto temp_reader_proxy_data = get_temporary_reader_proxies_pool().get();
-
+    // 设置参数
     temp_reader_proxy_data->clear();
     temp_reader_proxy_data->expects_inline_qos = false;
     temp_reader_proxy_data->guid.guidPrefix = pdata.guid.guidPrefix;
@@ -777,8 +777,10 @@ void EDPSimple::assignRemoteEndpoints(
     auto temp_writer_proxy_data = get_temporary_writer_proxies_pool().get();
 
     temp_writer_proxy_data->clear();
+    //设置guidPrefix
     temp_writer_proxy_data->guid.guidPrefix = pdata.guid.guidPrefix;
     temp_writer_proxy_data->persistence_guid = pdata.get_persistence_guid();
+    //设置远端的locator
     temp_writer_proxy_data->set_remote_locators(pdata.metatraffic_locators, network, use_multicast_locators,
             pdata.is_from_this_host());
     temp_writer_proxy_data->durability.kind = dds::TRANSIENT_LOCAL_DURABILITY_QOS;
@@ -791,6 +793,7 @@ void EDPSimple::assignRemoteEndpoints(
         EPROSIMA_LOG_INFO(RTPS_EDP, "Adding SEDP Pub Writer to my Pub Reader");
         temp_writer_proxy_data->guid.entityId = c_EntityId_SEDPPubWriter;
         temp_writer_proxy_data->set_persistence_entity_id(c_EntityId_SEDPPubWriter);
+        // 端点匹配
         publications_reader_.first->matched_writer_add_edp(*temp_writer_proxy_data);
     }
     auxendp = endp;

@@ -313,6 +313,7 @@ bool NetworkFactory::is_locator_reachable(
 void NetworkFactory::select_locators(
         LocatorSelector& selector) const
 {
+    // 初始化  
     selector.selection_start();
 
     /* - for each transport:

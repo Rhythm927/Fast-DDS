@@ -106,9 +106,12 @@ bool StatelessReader::matched_writer_add_edp(
         std::unique_lock<RecursiveTimedMutex> guard(mp_mutex);
         listener = listener_;
 
+        // 是不是进程内
         bool is_same_process = RTPSDomainImpl::should_intraprocess_between(m_guid, wdata.guid);
+        // 是不是进程间
         bool is_datasharing = is_datasharing_compatible_with(wdata);
 
+        //  如果这个writer之前就有，就更新writer的信息
         for (RemoteWriterInfo_t& writer : matched_writers_)
         {
             if (writer.guid == wdata.guid)
@@ -155,9 +158,10 @@ bool StatelessReader::matched_writer_add_edp(
         info.has_manual_topic_liveliness = (dds::MANUAL_BY_TOPIC_LIVELINESS_QOS == wdata.liveliness.kind);
         info.is_datasharing = is_datasharing;
         info.ownership_strength = wdata.ownership_strength.value;
-
+        // 如果进程间通信
         if (is_datasharing)
         {
+            //加入监听
             if (datasharing_listener_->add_datasharing_writer(wdata.guid,
                     m_att.durabilityKind == VOLATILE,
                     history_->m_att.maximumReservedCaches))
@@ -175,6 +179,7 @@ bool StatelessReader::matched_writer_add_edp(
 
         }
 
+        //将writer放入matched_writers_
         if (matched_writers_.emplace_back(info) == nullptr)
         {
             EPROSIMA_LOG_WARNING(RTPS_READER, "No space to add writer " << wdata.guid << " to reader " << m_guid);
@@ -203,7 +208,7 @@ bool StatelessReader::matched_writer_add_edp(
             mp_RTPSParticipant->createSenderResources(wdata.remote_locators, m_att);
         }
     }
-
+    //wlp相关
     if (liveliness_lease_duration_ < dds::c_TimeInfinite)
     {
         auto wlp = mp_RTPSParticipant->wlp();
@@ -338,8 +343,10 @@ bool StatelessReader::matched_writer_is_matched(
 bool StatelessReader::change_received(
         CacheChange_t* change)
 {
+    ///@brief StatelessReader 已经决定要接收这个 CacheChange_t 了，现在把它真正放进 history，并通知上层“有新数据来了”。
     // Only make the change visible if there is not another with a bigger sequence number.
     // TODO Revisar si no hay que incluirlo.
+    // 判断是不是旧包/重复包
     if (!thereIsUpperRecordOf(change->writerGUID, change->sequenceNumber))
     {
         bool update_notified = true;
@@ -357,7 +364,7 @@ bool StatelessReader::change_received(
             update_notified = is_matched;
         }
 
-        // Update Ownership strength.
+        // Update Ownership strength. 所有权强度
         if (dds::EXCLUSIVE_OWNERSHIP_QOS == m_att.ownershipKind)
         {
             assert(matched_writers_.end() != writer);
@@ -367,7 +374,7 @@ bool StatelessReader::change_received(
         {
             change->reader_info.writer_ownership_strength = (std::numeric_limits<uint32_t>::max)();
         }
-
+        // 把 change 放进 ReaderHistory
         if (history_->received_change(change, 0))
         {
             auto payload_length = change->serializedPayload.length;
@@ -378,6 +385,7 @@ bool StatelessReader::change_received(
             SequenceNumber_t previous_seq{ 0, 0 };
             if (update_notified)
             {
+                // 更新这个 writer 已经通知到上层的最大 sequence number，并返回旧的 sequence number。它用于判断中间有没有丢样本。
                 previous_seq = update_last_notified(change->writerGUID, change->sequenceNumber);
             }
             ++total_unread_;
@@ -386,7 +394,7 @@ bool StatelessReader::change_received(
             // Statistics callback is called with the original writer GUID if it is set
             auto statistics_source_guid = change->write_params.original_writer_info() != OriginalWriterInfo::unknown() ?
                     change->write_params.original_writer_info().original_writer_guid() : guid;
-
+            // 告诉统计模块：这个 reader 收到数据了。
             on_data_notify(statistics_source_guid, change->sourceTimestamp);
 
             auto listener = get_listener();
@@ -592,10 +600,11 @@ bool StatelessReader::process_data_msg(
     assert(change);
 
     std::unique_lock<RecursiveTimedMutex> lock(mp_mutex);
-
+    //check 一下消息是不是能够被接收
     if (acceptMsgFrom(change->writerGUID, change->kind))
     {
         // Always assert liveliness on scope exit
+        // wlp相关内容
         auto assert_liveliness_lambda = [&lock, this, change](void*)
                 {
                     lock.unlock(); // Avoid deadlock with LivelinessManager.
@@ -607,6 +616,7 @@ bool StatelessReader::process_data_msg(
                 IDSTRING "Trying to add change " << change->sequenceNumber << " TO reader: " << m_guid);
 
         // Check rejection by history
+        // check一下这个message之前是否被接收过
         if (!thereIsUpperRecordOf(change->writerGUID, change->sequenceNumber))
         {
             bool will_never_be_accepted = false;
@@ -615,11 +625,13 @@ bool StatelessReader::process_data_msg(
             {
                 if (will_never_be_accepted)
                 {
+                    //更新最后收到的消息number，这是为了后续统计消息的接收和缺失情况
                     update_last_notified(change->writerGUID, change->sequenceNumber);
                 }
                 return false;
             }
-
+            //接收到不是自己reader的消息，更新最后收到的消息number，返回true
+            //接收到特定reader的消息，就往下走
             if (!fastdds::rtps::change_is_relevant_for_filter(*change, m_guid, data_filter_))
             {
                 update_last_notified(change->writerGUID, change->sequenceNumber);
@@ -629,6 +641,13 @@ bool StatelessReader::process_data_msg(
 
             // Ask the pool for a cache change
             CacheChange_t* change_to_add = nullptr;
+            // 分配一个
+            // change_pool 和 payloadpool 不是一个pool
+
+            // CacheChange_t = 一条样本/消息的“外壳 + 元信息”
+            // payload       = 真正的数据字节内容
+            // change_pool_  = 管 CacheChange_t 对象本身
+            // payload_pool_ = 管 serializedPayload 里的数据内存
             if (!change_pool_->reserve_cache(change_to_add))
             {
                 EPROSIMA_LOG_WARNING(RTPS_MSG_IN,
@@ -638,9 +657,11 @@ bool StatelessReader::process_data_msg(
                 return false;
             }
 
-            // Copy metadata to reserved change
+            // Copy metadata to reserved change  把临时 change 的元信息拷贝到新申请的 change_to_add 上。
+            // 数据载荷payload  部分不copy
             change_to_add->copy_not_memcpy(change);
-
+            // 看一下是否是可以通过是能通过跨进程访问到 
+            ///@note std::any_of 只要范围里有任意一个元素满足条件，就返回 true；一个都不满足就返回 false。
             bool is_datasharing = std::any_of(matched_writers_.begin(), matched_writers_.end(),
                             [&change](const RemoteWriterInfo_t& writer)
                             {

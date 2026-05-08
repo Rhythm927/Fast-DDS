@@ -67,6 +67,7 @@ ReaderProxy::ReaderProxy(
     auto participant = writer_->get_participant_impl();
     if (nullptr != participant)
     {
+        // 发送本地初始化心跳的，这个TimedEvent只使用一次
         nack_supression_event_ = new TimedEvent(participant->getEventResource(),
                         [&]() -> bool
                         {
@@ -74,7 +75,7 @@ ReaderProxy::ReaderProxy(
                             return false;
                         },
                         fastdds::rtps::TimeConv::Time_t2MilliSecondsDouble(times.nack_supression_duration));
-
+        //将所有在途中的消息的状态设置为还没有收到回执的状态，同时启动周期性的heartbeat
         initial_heartbeat_event_ = new TimedEvent(participant->getEventResource(),
                         [&]() -> bool
                         {
@@ -378,6 +379,7 @@ bool ReaderProxy::change_is_unsent(
 void ReaderProxy::acked_changes_set(
         const SequenceNumber_t& seq_num)
 {
+    // readerSNState.baseACKNACK:bitmap 的起点。
     SequenceNumber_t future_low_mark = seq_num;
 
     if (seq_num > changes_low_mark_)
@@ -464,13 +466,20 @@ bool ReaderProxy::requested_changes_set(
         RTPSGapBuilder& gap_builder,
         const SequenceNumber_t& min_seq_in_history)
 {
-    bool isSomeoneWasSetRequested = false;
+    // 这段是 writer 侧处理 reader 的 NACK 请求。
+    // 1. 对 reader 请求的每个 seq，看看 writer 这边还有没有这个 change
+    // 2. 如果有，把它标记为 REQUESTED，后面会重发
+    // 3. 如果没有，但是这个 seq 理论上应该在 history 范围内，就加入 GAP，告诉 reader 不要再等这个 seq
 
+    bool isSomeoneWasSetRequested = false;
+    // 将changes_for_reader_ 中
+    // 相应的SequenceNumber的消息状态设置成REQUESTED，nack_response_event_ 重新启动
     if (SequenceNumber_t::unknown() != min_seq_in_history)
     {
         seq_num_set.for_each([&](SequenceNumber_t sit)
                 {
                     ChangeIterator chit = find_change(sit, true);
+                    // writer 还记录着这个 change
                     if (chit != changes_for_reader_.end())
                     {
                         if (UNACKNOWLEDGED == chit->getStatus())
@@ -480,6 +489,7 @@ bool ReaderProxy::requested_changes_set(
                             isSomeoneWasSetRequested = true;
                         }
                     }
+                    // writer 找不到这个 change
                     else if ((sit >= min_seq_in_history) && (sit > changes_low_mark_))
                     {
                         gap_builder.add(sit);
@@ -515,6 +525,13 @@ bool ReaderProxy::requested_changes_set(
 bool ReaderProxy::process_initial_acknack(
         const std::function<void(ChangeForReader_t& change)>& func)
 {
+    // initial_acknack：就是在没有收到heartbeat的情况下发送的acknack消息
+    // 如果是本地的reader发送过来的acknack，则将所有状态为 UNACKNOWLEDGED的消息状态设置为UNSENT，
+    // 然后将消息通过flow_controller_发送出去
+
+    // 本地 reader 要这样，是因为 同进程通信不适合再走“发 HEARTBEAT -> 等 ACKNACK -> 再重发 DATA”
+    // 这套网络往返。既然 writer 和 reader 都在同一个进程里，
+    // writer 可以直接把已经有的未确认样本重新投递给本地 reader。
     if (is_local_reader())
     {
         return 0 != convert_status_on_all_changes(UNACKNOWLEDGED, UNSENT, false, func);

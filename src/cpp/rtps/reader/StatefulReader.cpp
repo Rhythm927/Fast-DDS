@@ -200,6 +200,14 @@ void StatefulReader::init(
 bool StatefulReader::matched_writer_add_edp(
         const WriterProxyData& wdata)
 {
+    // 给当前 StatefulReader 增加一个远端 matched writer，并为这个远端 writer 建立 WriterProxy 状态。
+    // 远端 writer GUID
+    // 远端 locators
+    // 已经收到哪些 seq
+    // 缺哪些 seq
+    // ACKNACK/GAP/HEARTBEAT 状态
+    // 是否 DataSharing
+    ownership strength
     assert(wdata.guid != c_Guid_Unknown);
     ReaderListener* listener = nullptr;
 
@@ -212,9 +220,10 @@ bool StatefulReader::matched_writer_add_edp(
         }
 
         listener = listener_;
+        //guid 前8位一样，就在同一个进程中
         bool is_same_process = RTPSDomainImpl::should_intraprocess_between(m_guid, wdata.guid);
         bool is_datasharing = is_datasharing_compatible_with(wdata);
-
+        //查找之前已经匹配的WriterProxy
         for (WriterProxy* it : matched_writers_)
         {
             if (it->guid() == wdata.guid)
@@ -227,9 +236,11 @@ bool StatefulReader::matched_writer_add_edp(
                     history_->writer_update_its_ownership_strength_nts(
                         it->guid(), wdata.ownership_strength.value);
                 }
+                //更新WriterProxy
                 it->update(wdata);
-                if (!is_same_process)
+                if (!is_same_process) // 非同进程
                 {
+                    //如果有新的locator，就创建一个新的SenderResource（socket）
                     for (const Locator_t& locator : it->remote_locators_shrinked())
                     {
                         getRTPSParticipant()->createSenderResources(locator);
@@ -240,6 +251,7 @@ bool StatefulReader::matched_writer_add_edp(
                 {
                     // call the listener without the lock taken
                     guard.unlock();
+                    // 通知上层：当前 reader 已经发现并匹配了一个远端 writer。
                     listener->on_writer_discovery(
                         this, WriterDiscoveryStatus::CHANGED_QOS_WRITER, wdata.guid, &wdata);
                 }
@@ -265,6 +277,7 @@ bool StatefulReader::matched_writer_add_edp(
             if (getMatchedWritersSize() + matched_writers_pool_.size() < max_readers)
             {
                 const RTPSParticipantAttributes& part_att = mp_RTPSParticipant->get_attributes();
+                // 创建一个新的WriterProxy
                 wp = new WriterProxy(this, part_att.allocation.locators, proxy_changes_config_);
             }
             else
@@ -277,16 +290,18 @@ bool StatefulReader::matched_writer_add_edp(
         }
         else
         {
+            //从缓存池中取一个
             wp = matched_writers_pool_.back();
             matched_writers_pool_.pop_back();
         }
-
+        //设置一个初始的SequenceNumber
         SequenceNumber_t initial_sequence;
         add_persistence_guid(wdata.guid, wdata.persistence_guid);
+        //获取之前收到的最新的SequenceNumber
         initial_sequence = get_last_notified(wdata.guid);
 
         wp->start(wdata, initial_sequence, is_datasharing);
-
+        //不是同一个进程，对于新的locator，创建SenderResources，
         if (!is_same_process)
         {
             for (const Locator_t& locator : wp->remote_locators_shrinked())
@@ -896,6 +911,7 @@ bool StatefulReader::process_heartbeat_msg(
                     hbCount, firstSN, lastSN, finalFlag, livelinessFlag, disable_positive_acks_, assert_liveliness,
                     current_sample_lost))
         {
+            //删除小于firstSN的message
             history_->remove_fragmented_changes_until(firstSN, writerGUID);
 
             if (0 < current_sample_lost)

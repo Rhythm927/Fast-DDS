@@ -256,6 +256,7 @@ static void filter_remote_locators(
      * The heuristic has been chosen so non-matching locators will never give a value that will be given to a matching
      * locator. Matching locators will be sorted first by highest externality, then by lowest cost.
      */
+    // 从小到大排列
     std::sort(locators.begin(), locators.end(), compare_locators);
 
     /* Remove non-matching locators if requested to.
@@ -270,6 +271,7 @@ static void filter_remote_locators(
             {
                 break;
             }
+            //如果没有找到匹配的就去除
             locators.pop_back();
         }
     }
@@ -280,6 +282,7 @@ static void filter_remote_locators(
     // Keep non-matching locators with an heuristic value of 0.
     if (!ignore_non_matching)
     {
+        //没有匹配的情况下，为0
         while (it != locators.end() && (0 == heuristic(*it, external_locators, ignore_non_matching)))
         {
             ++it;
@@ -338,7 +341,9 @@ void filter_remote_locators(
         const ExternalLocators& default_external_locators,
         bool ignore_non_matching)
 {
+    // 这儿是Participant自己的metatraffic_locators.unicast  
     filter_remote_locators(data.metatraffic_locators.unicast, metatraffic_external_locators, ignore_non_matching);
+    // 这儿是Participant自己的default_locators.unicast  
     filter_remote_locators(data.default_locators.unicast, default_external_locators, ignore_non_matching);
 }
 

@@ -285,6 +285,10 @@ public:
         node->sequence_number(cache_change->sequenceNumber);
 
         // Add it to the history
+        // 通过address获取一个handle
+        // 这个address可以理解为本地地址，共享内存地址在本地内存上的映射
+        // 这个handle 可以理解为共享内存的一个全局地址，那么其他进程通过这个handle可以将共享内存映射到本地内存上，就能使用数据了
+        // 这个history_是一个数组，用于存放handle
         history_[static_cast<uint32_t>(descriptor_->notified_end)] = segment_->get_offset_from_address(node);
         EPROSIMA_LOG_INFO(DATASHARING_PAYLOADPOOL, "Change added to shared history"
                 << " with SN " << cache_change->sequenceNumber);

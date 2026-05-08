@@ -302,6 +302,7 @@ void PDPSimple::announceParticipantState(
 
         if (!(dispose || new_change))
         {
+            // 将history中的消息都发送出去
             endpoints->writer.writer_->send_periodic_announcement();
         }
     }
@@ -547,6 +548,7 @@ bool PDPSimple::create_dcps_participant_secure_endpoints()
 void PDPSimple::assignRemoteEndpoints(
         ParticipantProxyData* pdata)
 {
+    // 这部分是pdp的匹配
     bool ignored = false;
     notify_and_maybe_ignore_new_participant(pdata, ignored);
     if (!ignored)
@@ -629,6 +631,7 @@ void PDPSimple::notifyAboveRemoteEndpoints(
         const ParticipantProxyData& pdata,
         bool notify_secure_endpoints)
 {
+    //Inform EDP of new RTPSParticipant data:
     if (notify_secure_endpoints)
     {
         unmatch_pdp_remote_endpoints(pdata.guid);

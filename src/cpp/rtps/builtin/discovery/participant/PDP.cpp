@@ -528,6 +528,7 @@ bool PDP::enable()
     pre_enable_actions();
 
     // Create lease events on already created proxy data objects
+    // lease_duration_event 会周期性的check 这个remote_participant 是否还存在，不存在的话，不存在就把remote_participant移除
     for (ParticipantProxyData* pool_item : participant_proxies_pool_)
     {
         pool_item->lease_duration_event = new TimedEvent(mp_RTPSParticipant->getEventResource(),
@@ -537,23 +538,26 @@ bool PDP::enable()
                             return false;
                         }, 0.0);
     }
-
+    // 重新发送pdp消息
     resend_participant_info_event_ = new TimedEvent(mp_RTPSParticipant->getEventResource(),
                     [&]() -> bool
                     {
+                        // 如果是false 并不会将新change加入到history中，会发送在history 中的change。
                         announceParticipantState(false);
+                        // 设置下一次触发resend_participant_info_event_的时间间隔
                         set_next_announcement_interval();
                         return true;
                     },
                     0);
 
+    // 设置resend_participant_info_event_的时间间隔
     set_initial_announcement_interval();
 
     enabled_.store(true);
     // Notify "self-discovery"
     getRTPSParticipant()->on_entity_discovery(mp_RTPSParticipant->getGuid(),
             get_participant_proxy_data(mp_RTPSParticipant->getGuid().guidPrefix)->properties);
-
+    // 启动reader，能够接收pdp消息
     return builtin_endpoints_->enable_pdp_readers(mp_RTPSParticipant);
 }
 
@@ -601,9 +605,19 @@ void PDP::announceParticipantState(
 
         if (!dispose)
         {
+            //如果本地participant 的信息，有变化，则更新本地的ParticipantProxyData
+            // 脏标记 + 强制刷新
             if (m_hasChangedLocalPDP.exchange(false) || new_change)
+            //如果原来是 true，返回 true，同时把它改成 false    如果原来是 false，返回 false，同时保持为 false
             {
                 mp_mutex->lock();
+                ///@note 递归锁
+                /*
+                同一个线程：如果线程 A 已经持有锁，线程 A 再次 lock() 允许（递归计数 +1），不会死锁。
+                不同线程：如果线程 A 持有锁，线程 B 再去 lock() 不允许立刻拿到，但不是“禁止调用”，而是会：
+                lock()：阻塞等待，直到 A 把递归计数全部 unlock() 到 0，锁真正释放后 B 才能拿到；
+                try_lock()：立即返回 false（拿不到）。
+                */
                 ParticipantProxyData* local_participant_data = getLocalParticipantProxyData();
                 if (!local_participant_data)
                 {
@@ -618,13 +632,16 @@ void PDP::announceParticipantState(
 
                 if (history.getHistorySize() > 0)
                 {
+                    //本地的ParticipantProxyData，都是在history的最上面
                     history.remove_min_change();
                 }
                 uint32_t cdr_size = proxy_data_copy.get_serialized_size(true);
+                //新建一个change
                 change = history.create_change(cdr_size, ALIVE, key);
 
                 if (nullptr != change)
                 {
+                    //change内存 和 aux_msg的内存相关联
                     CDRMessage_t aux_msg(change->serializedPayload);
 
 #if __BIG_ENDIAN__
@@ -634,9 +651,10 @@ void PDP::announceParticipantState(
                     change->serializedPayload.encapsulation = (uint16_t)PL_CDR_LE;
                     aux_msg.msg_endian =  LITTLEEND;
 #endif // if __BIG_ENDIAN__
-
+                    //ParticipantProxyData的信息写入CDRMessage_t 的对象aux_msg
                     if (proxy_data_copy.write_to_cdr_message(&aux_msg, true))
                     {
+                        //将change 放入history 中
                         change->serializedPayload.length = (uint16_t)aux_msg.length;
 
                         history.add_change(change, wparams);
